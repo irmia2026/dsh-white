@@ -14,9 +14,10 @@ files:
 
 asar: true
 
-extraResources:
-  - from: .staging/dsh
-    to: dsh
+# The dsh runtime closure is copied by the afterPack hook (scripts/after-pack.cjs):
+# extraResources applies the default node_modules exclusions and would silently
+# drop the closure's dependency tree.
+afterPack: scripts/after-pack.cjs
 
 # Auto-update channel: GitHub Releases (electron-updater reads latest.yml).
 # Change owner/repo to wherever this project is pushed.
