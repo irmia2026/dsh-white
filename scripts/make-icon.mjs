@@ -115,4 +115,9 @@ function wrapIco(png) {
 mkdirSync(OUT_DIR, { recursive: true })
 writeFileSync(path.join(OUT_DIR, 'icon.png'), encodePng(512, paintIcon(512)))
 writeFileSync(path.join(OUT_DIR, 'icon.ico'), wrapIco(encodePng(256, paintIcon(256))))
-console.log('make-icon: wrote build-resources/icon.png and build-resources/icon.ico')
+// Tray icon: a small square version shipped inside the app (assets/ is part of
+// the electron-builder `files` list, so the tray can load it at runtime).
+const ASSETS_DIR = path.join(path.dirname(OUT_DIR), 'assets')
+mkdirSync(ASSETS_DIR, { recursive: true })
+writeFileSync(path.join(ASSETS_DIR, 'tray.png'), encodePng(32, paintIcon(32)))
+console.log('make-icon: wrote build-resources/icon.png, icon.ico and assets/tray.png')

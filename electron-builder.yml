@@ -8,6 +8,8 @@ directories:
 
 files:
   - electron/**/*
+  - ui/**/*
+  - assets/**/*
   - package.json
 
 asar: true
@@ -15,6 +17,13 @@ asar: true
 extraResources:
   - from: .staging/dsh
     to: dsh
+
+# Auto-update channel: GitHub Releases (electron-updater reads latest.yml).
+# Change owner/repo to wherever this project is pushed.
+publish:
+  - provider: github
+    owner: irmia2026
+    repo: deepharness-desktop
 
 win:
   target:

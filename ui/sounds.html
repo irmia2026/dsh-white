@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>DeepHarness 提示音</title>
+<script>
+// Tone synthesis for the DeepHarness Desktop sound system.
+// Zero audio assets: every sound is synthesized with WebAudio on demand.
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+
+const PATTERNS = {
+  // 就绪：两段上行音
+  ready: [
+    { freq: 523, start: 0, dur: 0.12, type: 'sine' },
+    { freq: 784, start: 0.16, dur: 0.16, type: 'sine' },
+  ],
+  // 完成：轻快的双音
+  done: [
+    { freq: 659, start: 0, dur: 0.14, type: 'sine' },
+    { freq: 880, start: 0.18, dur: 0.2, type: 'sine' },
+  ],
+  // 回合开始：极轻的单音（默认关闭）
+  turnStart: [
+    { freq: 660, start: 0, dur: 0.08, type: 'sine' },
+  ],
+  // 警告：低频双响
+  warning: [
+    { freq: 220, start: 0, dur: 0.22, type: 'triangle' },
+    { freq: 220, start: 0.3, dur: 0.22, type: 'triangle' },
+  ],
+  // 错误：低频锯齿长音
+  error: [
+    { freq: 180, start: 0, dur: 0.4, type: 'sawtooth' },
+  ],
+}
+
+function playPattern(name, volume) {
+  const pattern = PATTERNS[name]
+  if (!pattern) return
+  const gain = audioCtx.createGain()
+  gain.gain.value = volume
+  gain.connect(audioCtx.destination)
+  const now = audioCtx.currentTime
+  for (const note of pattern) {
+    const osc = audioCtx.createOscillator()
+    osc.type = note.type
+    osc.frequency.value = note.freq
+    osc.connect(gain)
+    osc.start(now + note.start)
+    osc.stop(now + note.start + note.dur)
+  }
+}
+
+window.deepharnessSounds?.onPlay(({ name, volume }) => {
+  try {
+    if (audioCtx.state === 'suspended') void audioCtx.resume()
+    playPattern(name, volume)
+  } catch {
+    // Sound failure is never fatal.
+  }
+})
+</script>
+</head>
+<body style="background:#000"></body>
+</html>

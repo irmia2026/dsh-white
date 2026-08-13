@@ -1,22 +1,30 @@
-import { app, BrowserWindow, dialog, shell } from 'electron'
-import { spawn } from 'node:child_process'
-import { createWriteStream } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
-import { request } from 'node:http'
-import { createServer } from 'node:net'
+// DeepHarness Desktop — Electron main process.
+//
+// Architecture (see HANDOFF.md): Electron shell + sidecar dsh child process
+// (ELECTRON_RUN_AS_NODE), BrowserWindow loading http://127.0.0.1:<port>.
+//
+// Features layered on top:
+// - tray + close-to-tray + auto-launch
+// - supervised sidecar lifecycle with exponential-backoff self-healing
+// - status/log panel (local HTML + IPC)
+// - sound cues driven by the /api/events.mux stream (via preload)
+// - electron-updater: check automatically, install manually
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createDshLifecycle } from './lifecycle.mjs'
+import { createLogStore } from './log-store.mjs'
+import { createSettings } from './settings.mjs'
+import { createSounds } from './sounds.mjs'
+import { createTray } from './tray.mjs'
+import { createUpdater } from './updater.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const READY_TIMEOUT_MS = 90_000
-const READY_POLL_MS = 250
-const GRACEFUL_SHUTDOWN_MS = 2_000
-const STDERR_TAIL_BYTES = 8_192
 
 let mainWindow = null
-let dshChild = null
-let stopping = false
+let panelWindow = null
+let quitting = false
 
 function dshRoot() {
   return app.isPackaged
@@ -24,101 +32,8 @@ function dshRoot() {
     : path.join(HERE, '..', '.staging', 'dsh')
 }
 
-function pickFreePort() {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address()
-      server.close(() => resolve(port))
-    })
-  })
-}
-
-function waitForReady(port, deadline) {
-  return new Promise((resolve, reject) => {
-    const attempt = () => {
-      if (Date.now() > deadline) {
-        reject(new Error(`dsh web did not become ready within ${READY_TIMEOUT_MS} ms`))
-        return
-      }
-      const req = request({ host: '127.0.0.1', port, path: '/', timeout: 1_000 }, (res) => {
-        res.resume()
-        resolve()
-      })
-      req.on('error', () => setTimeout(attempt, READY_POLL_MS))
-      req.on('timeout', () => { req.destroy(); setTimeout(attempt, READY_POLL_MS) })
-      req.end()
-    }
-    attempt()
-  })
-}
-
-async function startDsh() {
-  const port = await pickFreePort()
-  const bin = path.join(dshRoot(), 'lib', 'bin.js')
-  const logDir = app.getPath('userData')
-  await mkdir(logDir, { recursive: true })
-  const logStream = createWriteStream(path.join(logDir, 'dsh-web.log'), { flags: 'a' })
-  const stderrTail = []
-  let stderrBytes = 0
-  const child = spawn(
-    process.execPath,
-    [bin, 'web', '--port', String(port)],
-    {
-      cwd: homedir(),
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    },
-  )
-  child.stdout.pipe(logStream)
-  child.stderr.on('data', (chunk) => {
-    logStream.write(chunk)
-    stderrTail.push(chunk.toString('utf8'))
-    stderrBytes += chunk.length
-    while (stderrBytes > STDERR_TAIL_BYTES) {
-      const dropped = stderrTail.shift()
-      if (dropped === undefined) break
-      stderrBytes -= dropped.length
-    }
-  })
-  child.on('error', (error) => {
-    console.error(`[deepharness-desktop] failed to spawn dsh: ${String(error)}`)
-  })
-  child.on('exit', (code, signal) => {
-    logStream.end()
-    console.error(`[deepharness-desktop] dsh exited (code=${String(code)} signal=${String(signal)}); stderr tail:\n${stderrTail.join('')}`)
-    if (stopping) return
-    dialog.showErrorBox(
-      'DeepHarness Desktop',
-      `dsh web exited unexpectedly (code=${String(code)} signal=${String(signal)}).\n\n${stderrTail.join('')}`,
-    )
-    app.exit(1)
-  })
-  dshChild = child
-  console.log(`[deepharness-desktop] spawned dsh pid=${String(child.pid)} bin=${bin} port=${String(port)}`)
-  await waitForReady(port, Date.now() + READY_TIMEOUT_MS)
-  return port
-}
-
-function stopDsh() {
-  if (stopping || dshChild === null || dshChild.exitCode !== null) return
-  stopping = true
-  try { dshChild.kill('SIGTERM') } catch { /* already gone */ }
-  const pid = dshChild.pid
-  const timer = setTimeout(() => {
-    if (dshChild === null || dshChild.exitCode !== null) return
-    if (process.platform === 'win32') {
-      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
-    } else {
-      try { dshChild.kill('SIGKILL') } catch { /* already gone */ }
-    }
-  }, GRACEFUL_SHUTDOWN_MS)
-  timer.unref()
-}
-
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
@@ -126,46 +41,174 @@ function createWindow() {
     title: 'DeepHarness Desktop',
     autoHideMenuBar: true,
     webPreferences: {
+      preload: path.join(HERE, 'preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   })
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  window.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http://') || url.startsWith('https://')) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  return mainWindow
+  window.on('close', (event) => {
+    if (!quitting && settings.get().closeToTray) {
+      // Close-to-tray: keep the sidecar and the page (mux socket) alive.
+      event.preventDefault()
+      window.hide()
+    }
+  })
+  window.on('closed', () => { mainWindow = null })
+  return window
 }
+
+function createPanel() {
+  if (panelWindow !== null && !panelWindow.isDestroyed()) {
+    panelWindow.show()
+    panelWindow.focus()
+    return panelWindow
+  }
+  panelWindow = new BrowserWindow({
+    width: 780,
+    height: 560,
+    minWidth: 620,
+    minHeight: 420,
+    title: 'DeepHarness 状态与日志',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(HERE, 'preload.mjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+  panelWindow.loadFile(path.join(HERE, '..', 'ui', 'panel.html'))
+  panelWindow.on('closed', () => { panelWindow = null })
+  return panelWindow
+}
+
+function quitApp() {
+  if (quitting) return
+  quitting = true
+  try { lifecycle.stop() } catch { /* already stopped */ }
+  setTimeout(() => {
+    try { logs.end() } catch { /* already ended */ }
+    app.quit()
+  }, 300).unref()
+}
+
+// ── boot ────────────────────────────────────────────────────────────────────
+const userDataDir = app.getPath('userData')
+const settings = createSettings(userDataDir)
+const logs = createLogStore(userDataDir)
+let sounds
+let updater
+let lifecycle
+let tray
 
 if (app.requestSingleInstanceLock() === false) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (mainWindow === null) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.focus()
+    if (mainWindow !== null && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      mainWindow.focus()
+    }
   })
 
   app.whenReady().then(async () => {
-    const window = createWindow()
+    app.setLoginItemSettings({ openAtLogin: settings.get().autoLaunch })
+
+    sounds = createSounds({ settings, onLog: (line) => logs.append(line) })
+    updater = createUpdater({
+      settings,
+      onLog: (line) => logs.append(line),
+      onState: (state) => {
+        if (panelWindow !== null && !panelWindow.isDestroyed()) {
+          panelWindow.webContents.send('app:update', state)
+        }
+      },
+    })
+    lifecycle = createDshLifecycle({
+      dshRoot: dshRoot(),
+      env: process.env,
+      onLog: (line) => logs.append(line),
+      onStatus: (status) => {
+        if (panelWindow !== null && !panelWindow.isDestroyed()) {
+          panelWindow.webContents.send('app:status', status)
+        }
+        if (tray !== undefined) tray.refresh()
+      },
+    })
+
+    // ── IPC ────────────────────────────────────────────────────────────────
+    ipcMain.handle('app:get-status', () => lifecycle.getStatus())
+    ipcMain.handle('app:get-logs', () => logs.tail(800))
+    ipcMain.handle('app:get-settings', () => settings.get())
+    ipcMain.handle('app:set-settings', (_event, patch) => {
+      const next = settings.set(patch ?? {})
+      if (patch?.autoLaunch !== undefined) {
+        app.setLoginItemSettings({ openAtLogin: next.autoLaunch })
+      }
+      return next
+    })
+    ipcMain.handle('app:get-update', () => updater.getState())
+    ipcMain.handle('app:check-updates', () => { void updater.checkNow() })
+    ipcMain.handle('app:download-update', () => { void updater.downloadAndInstall() })
+    ipcMain.handle('app:install-update', () => updater.quitAndInstall())
+    ipcMain.handle('app:window-hide', () => {
+      if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.hide()
+    })
+    ipcMain.handle('app:window-show', () => {
+      if (mainWindow !== null && !mainWindow.isDestroyed()) {
+        mainWindow.show()
+        mainWindow.focus()
+      }
+    })
+    ipcMain.handle('app:quit', () => quitApp())
+    ipcMain.handle('app:play-sound', (_event, name) => sounds.play(String(name)))
+    ipcMain.handle('app:get-version', () => app.getVersion())
+    ipcMain.on('app:server-event', (_event, frame) => sounds.onServerFrame(frame))
+
+    logs.onLine((line) => {
+      if (panelWindow !== null && !panelWindow.isDestroyed()) {
+        panelWindow.webContents.send('app:log', line)
+      }
+    })
+
+    // ── windows, tray, sounds, sidecar ─────────────────────────────────────
+    mainWindow = createWindow()
+    sounds.ensureWindow()
+    tray = createTray({
+      getWindow: () => mainWindow,
+      openPanel: () => createPanel(),
+      settings,
+      updater,
+      onQuit: () => quitApp(),
+    })
+
     try {
-      const port = await startDsh()
-      console.log(`[deepharness-desktop] dsh web ready at http://127.0.0.1:${String(port)}`)
-      await window.loadURL(`http://127.0.0.1:${String(port)}`)
-      console.log(`[deepharness-desktop] window loaded http://127.0.0.1:${String(port)}`)
+      await lifecycle.start()
     } catch (error) {
-      dialog.showErrorBox('DeepHarness Desktop', `Failed to start dsh web:\n\n${String(error)}`)
-      stopDsh()
-      app.exit(1)
+      dialog.showErrorBox('DeepHarness Desktop', `无法启动 dsh web：\n\n${String(error)}`)
+      quitApp()
       return
     }
-    window.on('closed', () => { mainWindow = null })
+    await mainWindow.loadURL(`http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
+    logs.append(`[main] window loaded http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
+    console.log(`[deepharness-desktop] dsh web ready at http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
+    updater.schedule()
   })
 
+  app.on('before-quit', (event) => {
+    if (!quitting) {
+      event.preventDefault()
+      quitApp()
+    }
+  })
+
+  // With close-to-tray the main window never closes; if every window is
+  // destroyed without quitting (e.g. closeToTray disabled + panel closed),
+  // keep the tray alive.
   app.on('window-all-closed', () => {
-    stopDsh()
-    app.quit()
+    /* tray keeps the app running */
   })
-
-  app.on('before-quit', () => { stopDsh() })
 }
