@@ -38,15 +38,42 @@ function fail(message) {
 }
 
 // Files whose exec bit matters must survive the copy; cpSync preserves modes.
+// `dereference` materializes stray file links, while nested `node_modules`
+// directories are stripped entirely: they carry pnpm's per-instance symlink
+// wiring (including dependency cycles like cordis ↔ cordis-plugin-include)
+// that cannot be dereferenced and must not ship. The staged tree resolves
+// every dependency through its own flat/nested layout instead.
 function copyPackage(sourceDir, destDir) {
   mkdirSync(destDir, { recursive: true })
   cpSync(sourceDir, destDir, {
     recursive: true,
+    dereference: true,
     filter: (src) => {
       const base = path.basename(src)
+      if (base === 'node_modules') return false
       return !(base in SKIP_DIRS) || statSync(src).isFile()
     },
   })
+}
+
+// The staged tree must be link-free: every symlink/junction either points back
+// into the workspace (broken on other machines) or at an absolute dev path.
+function assertLinkFree(rootDir) {
+  const stack = [rootDir]
+  let links = 0
+  while (stack.length > 0) {
+    const dir = stack.pop()
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isSymbolicLink()) {
+        links += 1
+        if (links <= 5) console.warn(`materialize: staged link remains: ${full}`)
+        continue
+      }
+      if (entry.isDirectory()) stack.push(full)
+    }
+  }
+  if (links > 0) fail(`staged tree contains ${links} symbolic link(s); run materialize on a fresh staging (this copy is not self-contained)`)
 }
 
 function manifestOf(dir) {
@@ -118,11 +145,17 @@ for (const file of readdirSync(path.join(CLI_DIR, 'lib'))) {
   if (file.endsWith('.js')) cpSync(path.join(CLI_DIR, 'lib', file), path.join(OUT_DIR, 'lib', file))
 }
 copyPackage(path.join(CLI_DIR, 'config'), path.join(OUT_DIR, 'config'))
+// The staged manifest keeps the CLI's full dependency list: profile boot
+// heals `$DSH_HOME/profiles/node_modules` links FROM the installation
+// anchor's declared dependencies, so bare specifiers in the profile config
+// resolve into this staged tree. Without them every entry import fails with
+// ERR_MODULE_NOT_FOUND from the profile directory.
 writeFileSync(path.join(OUT_DIR, 'package.json'), `${JSON.stringify({
   name: cliManifest.name,
   version: cliManifest.version,
   type: 'module',
   bin: { dsh: 'lib/bin.js' },
+  dependencies: cliManifest.dependencies,
 }, null, 2)}\n`)
 const cliStagedDir = OUT_DIR
 
@@ -150,16 +183,25 @@ while (queue.length > 0) {
   }
   const stagedDir = stageInstance(name, instanceDir, requesterStagedDir)
   const manifest = manifestOf(instanceDir)
-  for (const dep of [
+  const deps = [
     ...Object.keys(manifest.dependencies ?? {}),
     ...Object.keys(manifest.peerDependencies ?? {}),
-  ]) {
+    // Platform native bindings ride optionalDependencies (koffi -> @koromix/koffi-*,
+    // node-addon-require-builtin -> *-win32-x64-msvc, sharp -> @img/sharp-*):
+    // only the current platform/arch triplet is needed. `includes` covers the
+    // extra toolchain suffixes (-msvc, -gnu, -musl).
+    ...Object.keys(manifest.optionalDependencies ?? {}).filter(
+      dep => dep.includes(`-${process.platform}-${process.arch}`),
+    ),
+  ]
+  for (const dep of deps) {
     if (dep.startsWith('@types/')) continue
     queue.push({ name: dep, requesterDir: instanceDir, requesterStagedDir: stagedDir })
   }
 }
 
 console.log(`materialize: staged ${stagedVersions.size} packages; verifying`)
+assertLinkFree(OUT_DIR)
 
 function checkFile(file, label) {
   if (existsSync(file)) return
@@ -172,7 +214,9 @@ const frontend = path.join(OUT_NODE_MODULES, '@deepseek-ai', 'dsh-web-frontend',
 checkFile(frontend, 'web frontend dist')
 checkFile(path.join(OUT_NODE_MODULES, '@deepseek-ai', 'dsh-web-app', 'cordis.patch.yml'), 'web-app bundle patch')
 checkFile(path.join(OUT_NODE_MODULES, '@deepseek-ai', 'dsh-subprocess-local', 'lib', 'index.js'), 'subprocess-local')
-checkFile(path.join(OUT_NODE_MODULES, 'koffi', 'build'), 'koffi native build (run `pnpm install` at the repo root first)')
+// koffi's native binding ships as a platform package (@koromix/koffi-<os>-<arch>),
+// not as a `build/` directory inside the koffi package itself.
+checkFile(path.join(OUT_NODE_MODULES, '@koromix', `koffi-${process.platform}-${process.arch}`, 'package.json'), `koffi native package (@koromix/koffi-${process.platform}-${process.arch})`)
 if (process.platform === 'win32') {
   checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'conpty', 'conpty.dll'), 'node-pty conpty.dll')
   checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'conpty', 'OpenConsole.exe'), 'node-pty OpenConsole.exe')
