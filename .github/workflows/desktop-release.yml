@@ -1,0 +1,115 @@
+# Desktop release pipeline: tag `desktop-v*` (or manual dispatch) builds the
+# three platform installers and publishes them to a GitHub Release.
+#
+# The desktop project lives as an untracked directory inside the
+# deepseek-harness checkout, so this workflow checks out both repos: the
+# harness (source of the dsh runtime) and this desktop repo (the shell), then
+# builds inside the harness tree.
+#
+# NOTE: this workflow is written but not yet run end-to-end; treat the first
+# green run as the acceptance test.
+
+name: Desktop release
+
+on:
+  push:
+    tags: ['desktop-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: --win
+            artifact: DeepHarnessDesktop-*-Setup.exe
+          - os: ubuntu-latest
+            args: --linux
+            artifact: DeepHarnessDesktop-*.AppImage
+          - os: macos-latest
+            args: --mac
+            artifact: DeepHarnessDesktop-*.dmg
+    runs-on: ${{ matrix.os }}
+    env:
+      PRIMARY_NODE_VERSION: '24'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: deepseek-ai/deepseek-harness
+          path: harness
+
+      - uses: actions/checkout@v6
+        with:
+          path: harness/desktop
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: harness/pnpm-lock.yaml
+
+      # Build the harness (the staged closure is materialized from built output).
+      - name: Install harness dependencies
+        working-directory: harness
+        run: pnpm install --frozen-lockfile
+
+      - name: Build harness
+        working-directory: harness
+        run: pnpm run build
+
+      # Desktop shell deps (npm; the repo .npmrc points at npmmirror, and the
+      # electron binary is mirrored through ELECTRON_MIRROR on the runner).
+      - name: Install desktop dependencies
+        working-directory: harness/desktop
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+        run: npm install
+
+      - name: Materialize dsh closure
+        working-directory: harness/desktop
+        run: node scripts/materialize.mjs
+
+      - name: Boot smoke
+        working-directory: harness/desktop
+        run: node scripts/smoke-boot.mjs
+
+      - name: Package
+        working-directory: harness/desktop
+        run: npx electron-builder ${{ matrix.args }} -p never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: desktop-${{ runner.os }}
+          path: |
+            harness/desktop/release/*.exe
+            harness/desktop/release/*.dmg
+            harness/desktop/release/*.AppImage
+            harness/desktop/release/*.deb
+            harness/desktop/release/latest*.yml
+            harness/desktop/release/*.blockmap
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#desktop-v}"
+          gh release create "desktop-v${VERSION}" dist/**/* \
+            --title "DeepHarness Desktop v${VERSION}" \
+            --generate-notes || true
