@@ -1,0 +1,24 @@
+{
+  "name": "deepharness-desktop",
+  "productName": "DeepHarness Desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unofficial desktop distribution of DeepSeek Harness: an Electron shell wrapping `dsh web`.",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "license": "MIT",
+  "scripts": {
+    "icon": "node scripts/make-icon.mjs",
+    "materialize": "node scripts/materialize.mjs",
+    "predev": "node scripts/materialize.mjs",
+    "dev": "electron .",
+    "build:dir": "node scripts/materialize.mjs && electron-builder --dir",
+    "build:win": "node scripts/materialize.mjs && electron-builder --win",
+    "build:mac": "node scripts/materialize.mjs && electron-builder --mac",
+    "build:linux": "node scripts/materialize.mjs && electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3"
+  }
+}
