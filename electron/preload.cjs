@@ -1,10 +1,9 @@
-// Shared preload for every window: exposes the `window.deepharness` API.
-//
-// In the dsh UI window the preload additionally opens the /api/events.mux
-// WebSocket (same-origin, loopback trust fence passes automatically) and
-// forwards session frames to the main process, which maps them to sounds.
-// This is the "no dsh source changes" hook for the sound system.
-import { contextBridge, ipcRenderer } from 'electron'
+// Shared preload (CommonJS — sandboxed preloads cannot use ESM).
+// Exposes `window.deepharness` to every window. The session-event mux
+// listener lives in the main process (main.mjs) instead: Node 24 has a
+// built-in WebSocket and the loopback trust fence passes it, so the preload
+// only ever needs contextBridge + ipcRenderer.
+const { contextBridge, ipcRenderer } = require('electron')
 
 const api = {
   // ── status ────────────────────────────────────────────────────────────────
@@ -57,44 +56,3 @@ const api = {
 }
 
 contextBridge.exposeInMainWorld('deepharness', api)
-
-// ── dsh UI window: mux listener ────────────────────────────────────────────
-// The preload runs in every window; only the window actually loading the dsh
-// UI (http origin) opens the event socket.
-if (typeof location !== 'undefined' && location.protocol === 'http:') {
-  let socket = null
-  let reconnectTimer = null
-  let stopped = false
-
-  const connect = () => {
-    if (stopped) return
-    const url = new URL('/api/events.mux', location.href)
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-    socket = new WebSocket(url)
-    socket.addEventListener('open', () => {
-      if (reconnectTimer !== null) {
-        clearTimeout(reconnectTimer)
-        reconnectTimer = null
-      }
-    })
-    socket.addEventListener('message', (event) => {
-      try {
-        const envelope = JSON.parse(String(event.data))
-        if (envelope && envelope.payload) {
-          ipcRenderer.send('app:server-event', envelope.payload)
-        }
-      } catch {
-        // Malformed frame: ignore, the stream continues.
-      }
-    })
-    socket.addEventListener('close', () => {
-      if (stopped) return
-      reconnectTimer = setTimeout(connect, 2000)
-    })
-  }
-  connect()
-  window.addEventListener('beforeunload', () => {
-    stopped = true
-    try { socket?.close() } catch { /* already closed */ }
-  })
-}

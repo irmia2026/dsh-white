@@ -7,7 +7,7 @@
 // - tray + close-to-tray + auto-launch
 // - supervised sidecar lifecycle with exponential-backoff self-healing
 // - status/log panel (local HTML + IPC)
-// - sound cues driven by the /api/events.mux stream (via preload)
+// - sound cues driven by the /api/events.mux stream (main-process WebSocket)
 // - electron-updater: check automatically, install manually
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { homedir } from 'node:os'
@@ -55,7 +55,7 @@ function createWindow() {
     title: 'DeepHarness Desktop',
     autoHideMenuBar: true,
     webPreferences: {
-      preload: path.join(HERE, 'preload.mjs'),
+      preload: path.join(HERE, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -90,7 +90,7 @@ function createPanel() {
     title: 'DeepHarness 状态与日志',
     autoHideMenuBar: true,
     webPreferences: {
-      preload: path.join(HERE, 'preload.mjs'),
+      preload: path.join(HERE, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -109,6 +109,39 @@ function quitApp() {
     try { logs.end() } catch { /* already ended */ }
     app.quit()
   }, 300).unref()
+}
+
+/**
+ * Listen to the dsh session event mux from the MAIN process (Node 24 has a
+ * built-in WebSocket; the loopback trust fence passes non-browser clients).
+ * Sound cues come from here — no preload/WebSocket inside the sandboxed
+ * renderer is needed.
+ */
+function startMuxListener(port) {
+  let socket = null
+  let stopped = false
+  const connect = () => {
+    if (stopped) return
+    socket = new WebSocket(`ws://127.0.0.1:${String(port)}/api/events.mux`)
+    socket.addEventListener('message', (event) => {
+      try {
+        const envelope = JSON.parse(String(event.data))
+        if (envelope && typeof envelope === 'object' && envelope.payload) {
+          sounds.onServerFrame(envelope.payload)
+        }
+      } catch {
+        // Malformed frame: ignore, the stream continues.
+      }
+    })
+    socket.addEventListener('close', () => {
+      if (!stopped) setTimeout(connect, 2000)
+    })
+  }
+  connect()
+  return () => {
+    stopped = true
+    try { socket?.close() } catch { /* already closed */ }
+  }
 }
 
 // ── boot ────────────────────────────────────────────────────────────────────
@@ -187,7 +220,6 @@ if (app.requestSingleInstanceLock() === false) {
     ipcMain.handle('app:quit', () => quitApp())
     ipcMain.handle('app:play-sound', (_event, name) => sounds.play(String(name)))
     ipcMain.handle('app:get-version', () => app.getVersion())
-    ipcMain.on('app:server-event', (_event, frame) => sounds.onServerFrame(frame))
 
     logs.onLine((line) => {
       if (panelWindow !== null && !panelWindow.isDestroyed()) {
@@ -216,7 +248,10 @@ if (app.requestSingleInstanceLock() === false) {
     await mainWindow.loadURL(`http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
     logs.append(`[main] window loaded http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
     console.log(`[deepharness-desktop] dsh web ready at http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
+    startMuxListener(lifecycle.getStatus().port)
     updater.schedule()
+    // `--open-panel` (dev/diagnostics): open the status panel at startup.
+    if (process.argv.includes('--open-panel')) createPanel()
   })
 
   app.on('before-quit', (event) => {

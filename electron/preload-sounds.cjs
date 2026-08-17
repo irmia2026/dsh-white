@@ -1,5 +1,5 @@
-// Tiny preload for the hidden sounds window: receives play commands.
-import { contextBridge, ipcRenderer } from 'electron'
+// Tiny preload for the hidden sounds window (CJS: sandboxed preloads).
+const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('deepharnessSounds', {
   onPlay: (callback) => {
