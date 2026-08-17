@@ -63,7 +63,7 @@ Dsh-white.exe (Electron 43, main.mjs)
 ## 常用命令
 
 ```powershell
-cd D:\DSH\desktop
+cd desktop（harness 仓库根下的 desktop 目录）
 node scripts/materialize.mjs    # 物化（前置：仓库根 pnpm install && pnpm run build）
 node scripts/make-icon.mjs      # 占位图标
 node scripts/smoke-boot.mjs     # 冒烟：闭包真实启动 + 页面探测
@@ -104,5 +104,5 @@ desktop/scripts/smoke-boot.mjs  启动冒烟（ELECTRON_RUN_AS_NODE 真实启动
 desktop/scripts/make-icon.mjs   占位图标（build-resources/* + assets/tray.png）
 desktop/electron-builder.yml    files/publish(afterPack 拷贝闭包)
 desktop/assets/tray.png          托盘图标
-D:\DSH（仓库根）                 未改动任何现有文件
+<harness 仓库根>                 未改动任何现有文件
 ```

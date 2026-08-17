@@ -156,6 +156,12 @@ for (const file of readdirSync(path.join(CLI_DIR, 'lib'))) {
   if (file.endsWith('.js')) cpSync(path.join(CLI_DIR, 'lib', file), path.join(OUT_DIR, 'lib', file))
 }
 copyPackage(path.join(CLI_DIR, 'config'), path.join(OUT_DIR, 'config'))
+// Redistribution compliance: the harness license and third-party notices
+// ride the closure root, next to the staged runtime.
+for (const notice of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) {
+  const src = path.join(REPO_ROOT, notice)
+  if (existsSync(src)) cpSync(src, path.join(OUT_DIR, notice))
+}
 // The staged manifest keeps the CLI's full dependency list: profile boot
 // heals `$DSH_HOME/profiles/node_modules` links FROM the installation
 // anchor's declared dependencies, so bare specifiers in the profile config

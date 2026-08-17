@@ -15,10 +15,10 @@
 
 ## 快速开始
 
-前置：仓库根 `D:\DSH` 已完成 `pnpm install && pnpm run build`（闭包从 workspace 的已构建产物物化）。
+前置：harness 仓库根（本目录的上一级）已完成 `pnpm install && pnpm run build`（闭包从 workspace 的已构建产物物化）。
 
 ```powershell
-cd D:\DSH\desktop
+cd desktop
 npm install          # 本机网络下 pnpm 的 fetch 层不稳；electron 二进制走 npmmirror
 node scripts/materialize.mjs   # 物化 dsh 闭包到 .staging/dsh（约 290 MiB）
 node scripts/make-icon.mjs     # 占位图标（assets/tray.png + build-resources/*）
