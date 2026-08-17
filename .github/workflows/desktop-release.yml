@@ -27,13 +27,13 @@ jobs:
         include:
           - os: windows-latest
             args: --win
-            artifact: DeepHarnessDesktop-*-Setup.exe
+            artifact: DshWhite-*-Setup.exe
           - os: ubuntu-latest
             args: --linux
-            artifact: DeepHarnessDesktop-*.AppImage
+            artifact: DshWhite-*.AppImage
           - os: macos-latest
             args: --mac
-            artifact: DeepHarnessDesktop-*.dmg
+            artifact: DshWhite-*.dmg
     runs-on: ${{ matrix.os }}
     env:
       PRIMARY_NODE_VERSION: '24'
@@ -47,7 +47,12 @@ jobs:
         with:
           path: harness/desktop
 
+      # pnpm/action-setup resolves its version from the checked-out repo's
+      # package.json — which is the desktop repo here (no packageManager
+      # field), so pin the version the harness workspace pins.
       - uses: pnpm/action-setup@v4
+        with:
+          version: '11.7.0'
 
       - uses: actions/setup-node@v6
         with:
