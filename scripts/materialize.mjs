@@ -30,7 +30,12 @@ const CLI_DIR = path.join(REPO_ROOT, 'apps', 'cli')
 const STAGING_DIR = path.join(DESKTOP_DIR, '.staging')
 const OUT_DIR = path.join(STAGING_DIR, 'dsh')
 const OUT_NODE_MODULES = path.join(OUT_DIR, 'node_modules')
-const SKIP_DIRS = new Set(['tests', 'coverage', '__snapshots__'])
+// Do NOT skip 'doc'/'docs': at least one runtime package (yaml) keeps live
+// code in dist/doc/directives.js. Only test/example/coverage dirs are safe.
+const SKIP_DIRS = new Set(['tests', '__tests__', 'coverage', '__snapshots__', 'examples'])
+// Runtime-dead file kinds: sourcemaps, debug symbols, TS sources/declarations,
+// build caches, and C/C++ sources (their .node/.dll/.exe products are kept).
+const SKIP_EXTENSIONS = new Set(['.map', '.pdb', '.tsbuildinfo', '.ts', '.tsx', '.cc', '.cpp', '.c', '.hh', '.hpp'])
 
 function fail(message) {
   console.error(`materialize: ${message}`)
@@ -43,6 +48,8 @@ function fail(message) {
 // wiring (including dependency cycles like cordis ↔ cordis-plugin-include)
 // that cannot be dereferenced and must not ship. The staged tree resolves
 // every dependency through its own flat/nested layout instead.
+// NB: `SKIP_DIRS.has(base)` — a Set has no `in` operator; the original
+// `base in SKIP_DIRS` silently never matched and leaked 199 test dirs.
 function copyPackage(sourceDir, destDir) {
   mkdirSync(destDir, { recursive: true })
   cpSync(sourceDir, destDir, {
@@ -51,7 +58,11 @@ function copyPackage(sourceDir, destDir) {
     filter: (src) => {
       const base = path.basename(src)
       if (base === 'node_modules') return false
-      return !(base in SKIP_DIRS) || statSync(src).isFile()
+      if (SKIP_DIRS.has(base)) {
+        return !statSync(src, { throwIfNoEntry: false })?.isDirectory()
+      }
+      if (SKIP_EXTENSIONS.has(path.extname(base).toLowerCase())) return false
+      return true
     },
   })
 }
