@@ -237,9 +237,15 @@ checkFile(path.join(OUT_NODE_MODULES, '@koromix', `koffi-${process.platform}-${p
 if (process.platform === 'win32') {
   checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'conpty', 'conpty.dll'), 'node-pty conpty.dll')
   checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'conpty', 'OpenConsole.exe'), 'node-pty OpenConsole.exe')
+} else if (process.platform === 'darwin') {
+  // macOS ships prebuilt addons in the npm tarball.
+  const helper = path.join(OUT_NODE_MODULES, 'node-pty', 'prebuilds', `darwin-${process.arch}`, 'spawn-helper')
+  checkFile(helper, 'node-pty spawn-helper (darwin prebuild)')
 } else {
-  const helper = path.join(OUT_NODE_MODULES, 'node-pty', 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper')
-  checkFile(helper, 'node-pty spawn-helper')
+  // Linux compiles from source at install time — the addon lands in
+  // build/Release, not prebuilds.
+  checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'spawn-helper'), 'node-pty spawn-helper (compiled)')
+  checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'pty.node'), 'node-pty pty.node (compiled)')
 }
 
 const bin = path.join(OUT_DIR, 'lib', 'bin.js')
