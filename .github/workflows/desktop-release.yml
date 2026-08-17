@@ -115,6 +115,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      # gh release create needs a git repository context.
+      - uses: actions/checkout@v6
+
       - uses: actions/download-artifact@v5
         with:
           path: dist
@@ -124,6 +127,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${GITHUB_REF_NAME#desktop-v}"
-          gh release create "desktop-v${VERSION}" dist/**/* \
-            --title "DeepHarness Desktop v${VERSION}" \
-            --generate-notes || true
+          gh release create "desktop-v${VERSION}" dist/desktop-*/* \
+            --title "Dsh-white v${VERSION}" \
+            --generate-notes
