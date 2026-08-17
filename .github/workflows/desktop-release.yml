@@ -78,14 +78,13 @@ jobs:
         run: npm install
 
       # npm does not always run electron's install.js (observed locally and on
-      # runners), leaving dist/electron absent; fetch it explicitly and verify.
+      # runners), leaving dist/electron absent; fetch it explicitly and verify
+      # at the platform-correct path (darwin: Electron.app/Contents/MacOS/Electron).
       - name: Fetch electron binary
         working-directory: harness/desktop
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
-        run: |
-          node node_modules/electron/install.js
-          node -e "const p=require('path');const f=require('fs');const b=p.join('node_modules','electron','dist',process.platform==='win32'?'electron.exe':'electron');if(!f.existsSync(b)){console.error('electron binary missing at '+b);process.exit(1)}"
+        run: node scripts/fetch-electron.mjs
 
       - name: Materialize dsh closure
         working-directory: harness/desktop

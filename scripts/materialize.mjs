@@ -238,13 +238,13 @@ if (process.platform === 'win32') {
   checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'conpty', 'conpty.dll'), 'node-pty conpty.dll')
   checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'conpty', 'OpenConsole.exe'), 'node-pty OpenConsole.exe')
 } else if (process.platform === 'darwin') {
-  // macOS ships prebuilt addons in the npm tarball.
+  // macOS ships prebuilt addons in the npm tarball; spawn-helper is a
+  // macOS-only build target (node-pty binding.gyp gates it on OS=="mac").
   const helper = path.join(OUT_NODE_MODULES, 'node-pty', 'prebuilds', `darwin-${process.arch}`, 'spawn-helper')
   checkFile(helper, 'node-pty spawn-helper (darwin prebuild)')
 } else {
-  // Linux compiles from source at install time — the addon lands in
-  // build/Release, not prebuilds.
-  checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'spawn-helper'), 'node-pty spawn-helper (compiled)')
+  // Linux compiles pty.node from source at install; no spawn-helper exists
+  // on this platform at all (binding.gyp builds it only for mac).
   checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'pty.node'), 'node-pty pty.node (compiled)')
 }
 
