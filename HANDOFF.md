@@ -30,9 +30,10 @@ DeepHarness Desktop.exe (Electron 43, main.mjs)
 |---|---|---|
 | 托盘 + 关闭到托盘 + 开机自启 | `electron/tray.mjs` + settings.closeToTray/autoLaunch（`setLoginItemSettings`） | 托盘菜单可操作；关窗隐藏、退出干净 |
 | 崩溃自愈 + 状态展示 | `electron/lifecycle.mjs`：指数退避重启（1s→30s）+ 状态对象；面板实时展示 | sidecar 异常退出后自动重启（实测重启循环正常） |
-| 日志面板 | `electron/log-store.mjs`（环形 2000 行 + 8MB×3 轮转）+ `ui/panel.html` 三页签面板 | 面板可拉取/流式日志 |
-| 提示音 | `electron/sounds.mjs` + `ui/sounds.html`（WebAudio 合成）；preload 同源连 `/api/events.mux` 监听 session 事件 | ready/done/warning 映射 + 设置开关/音量 |
+| 日志面板 | `electron/log-store.mjs`（环形 2000 行 + 8MB×3 轮转）+ `ui/panel.html` 两页签面板（状态/日志/设置） | 面板可拉取/流式日志 |
 | 自动更新 | `electron/updater.mjs`：启动 30s + 每 4h 自动检查、手动安装；仅 NSIS 安装版 | latest.yml/blockmap 已随构建产出；发布后即可生效 |
+
+~~提示音系统~~（2026-08-17 移除）：隐藏 WebAudio 窗口的播放链路在 sandboxed/无手势环境下可靠性不达标，用户决定移除。若未来需要，优先用 Electron `Notification`（系统通知音）而非隐藏窗口方案。
 
 ## 已验证事实（省得重测）
 
@@ -93,13 +94,10 @@ desktop/electron/main.mjs       主进程：单实例/选端口/spawn(--expose-i
 desktop/electron/lifecycle.mjs  sidecar 生命周期：指数退避重启 + 状态机
 desktop/electron/settings.mjs   应用设置（userData/settings.json）
 desktop/electron/log-store.mjs  环形缓冲 + 轮转日志
-desktop/electron/sounds.mjs     提示音引擎（事件→声音，走隐藏 WebAudio 窗口）
-desktop/electron/updater.mjs    electron-updater：检查自动、安装手动
+desktop/electron/updater.mjs    electron-updater：检查自动、安装手动（无 app-update.yml 时跳过，不刷日志）
 desktop/electron/tray.mjs       托盘菜单
-desktop/electron/preload.mjs    共享 preload：状态/日志/设置/更新 IPC + /api/events.mux 监听
-desktop/electron/preload-sounds.mjs 声音窗口 preload
+desktop/electron/preload.cjs    共享 preload（CJS，sandbox 安全）：状态/日志/设置/更新 IPC
 desktop/ui/panel.html|mjs       状态/日志/设置面板
-desktop/ui/sounds.html          WebAudio 音色合成（零音频资产）
 desktop/scripts/materialize.mjs 解析器漫游物化 + 完整性校验 + 零链接断言
 desktop/scripts/after-pack.cjs  electron-builder afterPack：整树拷贝闭包
 desktop/scripts/smoke-boot.mjs  启动冒烟（ELECTRON_RUN_AS_NODE 真实启动 + 页面探测）

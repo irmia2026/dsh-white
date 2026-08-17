@@ -47,9 +47,6 @@ const api = {
   showWindow: () => ipcRenderer.invoke('app:window-show'),
   quit: () => ipcRenderer.invoke('app:quit'),
 
-  // ── sounds ────────────────────────────────────────────────────────────────
-  playSound: (name) => ipcRenderer.invoke('app:play-sound', name),
-
   // ── metadata ──────────────────────────────────────────────────────────────
   getVersion: () => ipcRenderer.invoke('app:get-version'),
   platform: process.platform,

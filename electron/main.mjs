@@ -7,7 +7,6 @@
 // - tray + close-to-tray + auto-launch
 // - supervised sidecar lifecycle with exponential-backoff self-healing
 // - status/log panel (local HTML + IPC)
-// - sound cues driven by the /api/events.mux stream (main-process WebSocket)
 // - electron-updater: check automatically, install manually
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { homedir } from 'node:os'
@@ -16,7 +15,6 @@ import { fileURLToPath } from 'node:url'
 import { createDshLifecycle } from './lifecycle.mjs'
 import { createLogStore } from './log-store.mjs'
 import { createSettings } from './settings.mjs'
-import { createSounds } from './sounds.mjs'
 import { createTray } from './tray.mjs'
 import { createUpdater } from './updater.mjs'
 
@@ -25,7 +23,6 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow = null
 let panelWindow = null
 let quitting = false
-let lastPhase = 'idle'
 
 /** Route renderer console errors and load failures into the app log. */
 function attachRendererDiagnostics(window, tag) {
@@ -111,44 +108,10 @@ function quitApp() {
   }, 300).unref()
 }
 
-/**
- * Listen to the dsh session event mux from the MAIN process (Node 24 has a
- * built-in WebSocket; the loopback trust fence passes non-browser clients).
- * Sound cues come from here — no preload/WebSocket inside the sandboxed
- * renderer is needed.
- */
-function startMuxListener(port) {
-  let socket = null
-  let stopped = false
-  const connect = () => {
-    if (stopped) return
-    socket = new WebSocket(`ws://127.0.0.1:${String(port)}/api/events.mux`)
-    socket.addEventListener('message', (event) => {
-      try {
-        const envelope = JSON.parse(String(event.data))
-        if (envelope && typeof envelope === 'object' && envelope.payload) {
-          sounds.onServerFrame(envelope.payload)
-        }
-      } catch {
-        // Malformed frame: ignore, the stream continues.
-      }
-    })
-    socket.addEventListener('close', () => {
-      if (!stopped) setTimeout(connect, 2000)
-    })
-  }
-  connect()
-  return () => {
-    stopped = true
-    try { socket?.close() } catch { /* already closed */ }
-  }
-}
-
 // ── boot ────────────────────────────────────────────────────────────────────
 const userDataDir = app.getPath('userData')
 const settings = createSettings(userDataDir)
 const logs = createLogStore(userDataDir)
-let sounds
 let updater
 let lifecycle
 let tray
@@ -166,7 +129,6 @@ if (app.requestSingleInstanceLock() === false) {
   app.whenReady().then(async () => {
     app.setLoginItemSettings({ openAtLogin: settings.get().autoLaunch })
 
-    sounds = createSounds({ settings, onLog: (line) => logs.append(line) })
     updater = createUpdater({
       settings,
       onLog: (line) => logs.append(line),
@@ -184,11 +146,6 @@ if (app.requestSingleInstanceLock() === false) {
         if (panelWindow !== null && !panelWindow.isDestroyed()) {
           panelWindow.webContents.send('app:status', status)
         }
-        // Lifecycle transitions double as sound cues; the previous phase lives
-        // in a closure variable so `ready` fires exactly once per recovery.
-        if (status.phase === 'ready' && lastPhase !== 'ready') sounds.play('ready')
-        if (status.phase === 'restarting') sounds.play('warning')
-        lastPhase = status.phase
         if (tray !== undefined) tray.refresh()
       },
     })
@@ -218,7 +175,6 @@ if (app.requestSingleInstanceLock() === false) {
       }
     })
     ipcMain.handle('app:quit', () => quitApp())
-    ipcMain.handle('app:play-sound', (_event, name) => sounds.play(String(name)))
     ipcMain.handle('app:get-version', () => app.getVersion())
 
     logs.onLine((line) => {
@@ -227,9 +183,8 @@ if (app.requestSingleInstanceLock() === false) {
       }
     })
 
-    // ── windows, tray, sounds, sidecar ─────────────────────────────────────
+    // ── windows, tray, sidecar ─────────────────────────────────────────────
     mainWindow = createWindow()
-    sounds.ensureWindow()
     tray = createTray({
       getWindow: () => mainWindow,
       openPanel: () => createPanel(),
@@ -248,7 +203,6 @@ if (app.requestSingleInstanceLock() === false) {
     await mainWindow.loadURL(`http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
     logs.append(`[main] window loaded http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
     console.log(`[deepharness-desktop] dsh web ready at http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
-    startMuxListener(lifecycle.getStatus().port)
     updater.schedule()
     // `--open-panel` (dev/diagnostics): open the status panel at startup.
     if (process.argv.includes('--open-panel')) createPanel()

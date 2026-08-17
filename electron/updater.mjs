@@ -6,6 +6,8 @@
 // - Enabled only in packaged builds; NSIS (win32) and dmg/zip (darwin) only;
 //   portable Windows builds cannot self-update and skip this entirely.
 import { app } from 'electron'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
 // electron-updater is CJS; the ESM named-export interop cannot see its keys,
 // so take the namespace default and destructure.
 import electronUpdater from 'electron-updater'
@@ -28,7 +30,11 @@ export function createUpdater({ settings, onLog, onState }) {
     }
   }
 
-  const canUpdate = () => app.isPackaged && (process.platform === 'win32' || process.platform === 'darwin')
+  // Unpacked/dev builds carry no app-update.yml; checking against one would
+  // spam ENOENT into the log on every schedule tick.
+  const canUpdate = () => app.isPackaged
+    && (process.platform === 'win32' || process.platform === 'darwin')
+    && existsSync(path.join(process.resourcesPath, 'app-update.yml'))
 
   function attach() {
     if (!canUpdate()) return

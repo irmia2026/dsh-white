@@ -117,12 +117,6 @@ function renderSettings(next) {
   settings = next
   $('set-close-to-tray').checked = next.closeToTray
   $('set-auto-launch').checked = next.autoLaunch
-  $('set-sound-enabled').checked = next.sound.enabled
-  $('set-sound-volume').value = String(next.sound.volume)
-  $('set-sound-ready').checked = next.sound.ready
-  $('set-sound-done').checked = next.sound.done
-  $('set-sound-turnstart').checked = next.sound.turnStart
-  $('set-sound-warning').checked = next.sound.warning
 }
 
 const bindToggle = (id, path) => {
@@ -142,19 +136,6 @@ const bindToggle = (id, path) => {
 
 bindToggle('set-close-to-tray', ['closeToTray'])
 bindToggle('set-auto-launch', ['autoLaunch'])
-bindToggle('set-sound-enabled', ['sound', 'enabled'])
-bindToggle('set-sound-ready', ['sound', 'ready'])
-bindToggle('set-sound-done', ['sound', 'done'])
-bindToggle('set-sound-turnstart', ['sound', 'turnStart'])
-bindToggle('set-sound-warning', ['sound', 'warning'])
-
-$('set-sound-volume').addEventListener('input', (event) => {
-  api.setSettings({ sound: { volume: Number(event.target.value) } })
-})
-
-$('btn-test-sound').addEventListener('click', () => {
-  void api.playSound('done')
-})
 
 api.getSettings().then(renderSettings).catch(() => {})
 api.onSettings(renderSettings)
