@@ -46,6 +46,7 @@ const api = {
   hideWindow: () => ipcRenderer.invoke('app:window-hide'),
   showWindow: () => ipcRenderer.invoke('app:window-show'),
   quit: () => ipcRenderer.invoke('app:quit'),
+  restartDsh: () => ipcRenderer.invoke('app:restart-dsh'),
 
   // ── metadata ──────────────────────────────────────────────────────────────
   getVersion: () => ipcRenderer.invoke('app:get-version'),

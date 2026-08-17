@@ -27,6 +27,24 @@ export function pickFreePort() {
   })
 }
 
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const server = createServer()
+    server.once('error', () => resolve(false))
+    server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)))
+  })
+}
+
+/**
+ * Prefer a fixed port so the browser origin (and thereby localStorage: chat
+ * drafts, UI preferences) survives restarts; fall back to an OS-assigned
+ * port only when the preferred one is occupied.
+ */
+async function pickPort(preferred) {
+  if (preferred > 0 && await isPortFree(preferred)) return preferred
+  return pickFreePort()
+}
+
 function waitForReady(port, deadline) {
   return new Promise((resolve, reject) => {
     const attempt = () => {
@@ -46,10 +64,11 @@ function waitForReady(port, deadline) {
   })
 }
 
-export function createDshLifecycle({ dshRoot, env, onLog, onStatus }) {
+export function createDshLifecycle({ dshRoot, env, onLog, onStatus, preferredPort = 3080 }) {
   let child = null
   let stopping = false
   let restartTimer = null
+  let manualRestart = false
   let stdoutTail = ''
   let stderrTail = ''
   let status = {
@@ -88,7 +107,7 @@ export function createDshLifecycle({ dshRoot, env, onLog, onStatus }) {
     if (stopping) return
     if (child !== null && child.exitCode === null) return
 
-    const port = await pickFreePort()
+    const port = await pickPort(preferredPort)
     const bin = path.join(dshRoot, 'lib', 'bin.js')
     emitStatus({
       phase: 'starting',
@@ -147,7 +166,9 @@ export function createDshLifecycle({ dshRoot, env, onLog, onStatus }) {
         lastError: detail ? detail.slice(0, 500) : `exit code=${String(code)} signal=${String(signal)}`,
         pid: null,
       })
-      const delay = backoffMs()
+      // Manual restarts skip the exponential backoff.
+      const delay = manualRestart ? 0 : backoffMs()
+      manualRestart = false
       onLog(`[lifecycle] dsh exited (code=${String(code)} signal=${String(signal)}); restarting in ${delay} ms`)
       restartTimer = setTimeout(() => {
         restartTimer = null
@@ -204,9 +225,33 @@ export function createDshLifecycle({ dshRoot, env, onLog, onStatus }) {
     emitStatus({ phase: 'stopping' })
   }
 
+  /** User-initiated restart: kill the current child; the exit handler
+   *  restarts immediately (manual restarts skip backoff). */
+  function restart() {
+    manualRestart = true
+    onLog('[lifecycle] manual restart requested')
+    const current = child
+    if (current !== null && current.exitCode === null) {
+      try { current.kill('SIGTERM') } catch { /* already gone */ }
+      const timer = setTimeout(() => {
+        if (current.exitCode === null) {
+          if (process.platform === 'win32') {
+            spawn('taskkill', ['/pid', String(current.pid), '/T', '/F'], { stdio: 'ignore' })
+          } else {
+            try { current.kill('SIGKILL') } catch { /* already gone */ }
+          }
+        }
+      }, GRACEFUL_SHUTDOWN_MS)
+      timer.unref()
+    } else {
+      void start()
+    }
+  }
+
   return {
     start,
     stop,
+    restart,
     getStatus: () => status,
   }
 }

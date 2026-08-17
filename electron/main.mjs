@@ -8,8 +8,9 @@
 // - supervised sidecar lifecycle with exponential-backoff self-healing
 // - status/log panel (local HTML + IPC)
 // - electron-updater: check automatically, install manually
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron'
 import { homedir } from 'node:os'
+import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createDshLifecycle } from './lifecycle.mjs'
@@ -37,6 +38,46 @@ function attachRendererDiagnostics(window, tag) {
   })
 }
 
+// ── window state persistence ────────────────────────────────────────────────
+function loadWindowState() {
+  try {
+    const parsed = JSON.parse(readFileSync(path.join(app.getPath('userData'), 'window-state.json'), 'utf8'))
+    if (typeof parsed.width === 'number' && typeof parsed.height === 'number') return parsed
+  } catch { /* first run */ }
+  return null
+}
+
+function watchWindowState(window) {
+  const file = path.join(app.getPath('userData'), 'window-state.json')
+  let timer = null
+  const save = () => {
+    if (window.isDestroyed()) return
+    const bounds = window.getNormalBounds()
+    writeFileSync(file, JSON.stringify({ ...bounds, isMaximized: window.isMaximized() }))
+  }
+  const debounced = () => {
+    if (timer !== null) clearTimeout(timer)
+    timer = setTimeout(save, 500)
+  }
+  window.on('resize', debounced)
+  window.on('move', debounced)
+  window.on('close', save)
+}
+
+/** Minimal right-click menu: Electron ships none by default. */
+function attachContextMenu(window) {
+  window.webContents.on('context-menu', (_event, params) => {
+    const template = []
+    if (params.isEditable) {
+      template.push({ role: 'cut', label: '剪切' }, { role: 'paste', label: '粘贴' })
+    }
+    if (params.selectionText.trim().length > 0) template.push({ role: 'copy', label: '复制' })
+    template.push({ role: 'selectAll', label: '全选' })
+    if (params.linkURL) template.push({ label: '在浏览器中打开链接', click: () => void shell.openExternal(params.linkURL) })
+    Menu.buildFromTemplate(template).popup()
+  })
+}
+
 function dshRoot() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'dsh')
@@ -44,9 +85,12 @@ function dshRoot() {
 }
 
 function createWindow() {
+  const saved = loadWindowState()
   const window = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: saved?.width ?? 1280,
+    height: saved?.height ?? 800,
+    x: saved?.x,
+    y: saved?.y,
     minWidth: 900,
     minHeight: 600,
     title: 'Dsh-white',
@@ -55,8 +99,13 @@ function createWindow() {
       preload: path.join(HERE, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Close-to-tray keeps the page alive: don't throttle its timers/SSE.
+      backgroundThrottling: false,
+      // Persistent V8 code cache for the renderer (faster UI cold loads).
+      v8CacheOptions: 'code',
     },
   })
+  if (saved?.isMaximized) window.maximize()
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http://') || url.startsWith('https://')) void shell.openExternal(url)
     return { action: 'deny' }
@@ -70,6 +119,10 @@ function createWindow() {
   })
   window.on('closed', () => { mainWindow = null })
   attachRendererDiagnostics(window, 'main')
+  attachContextMenu(window)
+  watchWindowState(window)
+  // Splash until the sidecar is ready (first-run profile init can take ~20s).
+  window.loadFile(path.join(HERE, '..', 'ui', 'splash.html'))
   return window
 }
 
@@ -175,7 +228,21 @@ if (app.requestSingleInstanceLock() === false) {
       }
     })
     ipcMain.handle('app:quit', () => quitApp())
+    ipcMain.handle('app:restart-dsh', () => lifecycle.restart())
     ipcMain.handle('app:get-version', () => app.getVersion())
+
+    // Downloads (session export etc.): ask where to save instead of silently
+    // dropping files into the default downloads directory.
+    session.defaultSession.on('will-download', (_event, item) => {
+      const owner = BrowserWindow.fromWebContents(item.getWebContents()) ?? mainWindow
+      dialog.showSaveDialog(owner, { defaultPath: item.getFilename() }).then(({ canceled, filePath }) => {
+        if (canceled || !filePath) {
+          item.cancel()
+          return
+        }
+        item.setSavePath(filePath)
+      })
+    })
 
     logs.onLine((line) => {
       if (panelWindow !== null && !panelWindow.isDestroyed()) {

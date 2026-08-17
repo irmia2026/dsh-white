@@ -26,11 +26,13 @@ export function createLogStore(userDataDir) {
   const listeners = new Set()
 
   function append(line) {
-    ring.push(line)
+    // ISO timestamp prefix: sequencing is the whole point of a log.
+    const stamped = `${new Date().toISOString()} ${line}`
+    ring.push(stamped)
     if (ring.length > RING_CAPACITY) ring.splice(0, ring.length - RING_CAPACITY)
-    stream.write(`${line}\n`)
+    stream.write(`${stamped}\n`)
     for (const listener of listeners) {
-      try { listener(line) } catch { /* contained */ }
+      try { listener(stamped) } catch { /* contained */ }
     }
   }
 

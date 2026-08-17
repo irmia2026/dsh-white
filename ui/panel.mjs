@@ -70,6 +70,10 @@ setInterval(() => {
 api.getStatus().then(renderStatus).catch(() => {})
 api.onStatus(renderStatus)
 
+$('btn-restart-dsh').addEventListener('click', () => {
+  void api.restartDsh()
+})
+
 // ── logs ───────────────────────────────────────────────────────────────────
 const logEl = $('log')
 let autoScroll = true
