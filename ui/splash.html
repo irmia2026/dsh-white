@@ -6,31 +6,73 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    background: #101418; color: #8a94a0; height: 100vh;
+    background: #101418; color: #d7dde3; height: 100vh;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     font: 14px/1.6 "Microsoft YaHei", system-ui, sans-serif;
     user-select: none;
   }
-  .logo {
-    width: 72px; height: 72px; border-radius: 18px;
-    background: linear-gradient(180deg, #1b2a5e, #4d6bfe);
-    display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 30px; font-weight: 700; margin-bottom: 22px;
+  .title { font-size: 16px; margin-bottom: 18px; }
+  .phase { color: #8a94a0; font-size: 13px; margin-bottom: 14px; min-height: 20px; }
+  .track {
+    width: 320px; height: 4px; border-radius: 2px;
+    background: #232a33; overflow: hidden;
   }
-  .spinner {
-    width: 18px; height: 18px; border-radius: 50%;
-    border: 2px solid #2a323d; border-top-color: #4d8bff;
-    animation: spin 0.9s linear infinite; margin: 14px auto 0;
+  .fill {
+    height: 100%; width: 0%;
+    background: #4d8bff; border-radius: 2px;
+    transition: width 0.15s ease-out;
   }
-  @keyframes spin { to { transform: rotate(360deg) } }
-  .title { color: #d7dde3; font-size: 15px; }
-  .hint { margin-top: 6px; font-size: 12px; }
 </style>
 </head>
 <body>
-  <div class="logo">白</div>
   <div class="title">Dsh-white 正在启动</div>
-  <div class="hint">首次运行需要初始化运行时，约 20 秒；之后秒开。</div>
-  <div class="spinner"></div>
+  <div class="phase" id="phase">正在准备…</div>
+  <div class="track"><div class="fill" id="fill"></div></div>
+<script>
+// Splash with a real phase label and a progress bar.
+//
+// The bar is honest about what we can measure: dsh exposes only two lifecycle
+// signals (starting / ready), so the fill is a time-based curve that moves
+// fast to 90% (warm starts look instant), then creeps toward 99% while the
+// first-run profile init runs, and snaps to 100% on `ready`. It never goes
+// backwards and never claims a percentage we don't know.
+const fill = document.getElementById('fill')
+const phaseEl = document.getElementById('phase')
+const startTime = Date.now()
+let phase = 'starting'
+let displayed = 0
+let done = false
+
+function phaseText() {
+  const elapsed = Date.now() - startTime
+  if (phase === 'ready') return '即将就绪…'
+  if (phase === 'restarting') return '服务异常，正在自动重启…'
+  if (phase === 'failed') return '启动失败——请从托盘打开「日志与状态」查看详情'
+  return elapsed < 6000 ? '正在启动 dsh 服务…' : '正在初始化运行时（首次较慢，之后秒开）…'
+}
+
+function targetProgress() {
+  if (phase === 'ready') return 100
+  const elapsed = Date.now() - startTime
+  if (elapsed < 2000) return (elapsed / 2000) * 90
+  return Math.min(99, 90 + ((elapsed - 2000) / 2000) * 0.7)
+}
+
+function tick() {
+  if (done) return
+  displayed = Math.min(100, Math.max(displayed, targetProgress()))
+  fill.style.width = `${displayed}%`
+  phaseEl.textContent = phaseText()
+  if (displayed >= 100) { done = true; return }
+  setTimeout(tick, 100)
+}
+tick()
+
+// Live phase updates from the sidecar lifecycle (shared preload bridge).
+if (window.deepharness) {
+  window.deepharness.getStatus().then((status) => { phase = status.phase }).catch(() => {})
+  window.deepharness.onStatus((status) => { phase = status.phase })
+}
+</script>
 </body>
 </html>
