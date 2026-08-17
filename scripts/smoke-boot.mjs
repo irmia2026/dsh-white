@@ -12,7 +12,9 @@ import { fileURLToPath } from 'node:url'
 const DESKTOP_DIR = fileURLToPath(new URL('..', import.meta.url))
 const STAGED_BIN = join(DESKTOP_DIR, '.staging', 'dsh', 'lib', 'bin.js')
 const ELECTRON_BIN = join(DESKTOP_DIR, 'node_modules', 'electron', 'dist',
-  process.platform === 'win32' ? 'electron.exe' : 'electron')
+  process.platform === 'win32' ? 'electron.exe'
+    : process.platform === 'darwin' ? 'Electron.app/Contents/MacOS/Electron'
+    : 'electron')
 
 const READY_TIMEOUT_MS = 120_000
 const READY_POLL_MS = 500

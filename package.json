@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Unofficial desktop distribution of DeepSeek Harness: an Electron shell wrapping `dsh web`.",
+  "author": { "name": "irmia2026", "email": "irmia2026@users.noreply.github.com" },
   "type": "module",
   "main": "electron/main.mjs",
   "license": "MIT",
