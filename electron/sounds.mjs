@@ -30,10 +30,16 @@ export function createSounds({ settings, onLog }) {
         preload: path.join(HERE, 'preload-sounds.mjs'),
         contextIsolation: true,
         nodeIntegration: false,
+        // Chromium suspends AudioContext without a user gesture; a hidden
+        // window never receives one, which silently blocked every cue.
+        autoplayPolicy: 'no-user-gesture-required',
       },
     })
     window.loadFile(path.join(HERE, '..', 'ui', 'sounds.html'))
     window.on('closed', () => { window = null })
+    window.webContents.on('console-message', (_event, level, message) => {
+      if (level >= 2) onLog(`[sounds:console] ${message}`)
+    })
     return window
   }
 
@@ -49,6 +55,7 @@ export function createSounds({ settings, onLog }) {
     try {
       const win = ensureWindow()
       win.webContents.send('sound:play', { name, volume })
+      onLog(`[sounds] play ${name} (volume ${volume})`)
     } catch (error) {
       onLog(`[sounds] playback failed: ${String(error)}`)
     }

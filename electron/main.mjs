@@ -25,6 +25,20 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow = null
 let panelWindow = null
 let quitting = false
+let lastPhase = 'idle'
+
+/** Route renderer console errors and load failures into the app log. */
+function attachRendererDiagnostics(window, tag) {
+  window.webContents.on('console-message', (_event, level, message) => {
+    if (level >= 2) logs.append(`[${tag}:console] ${message}`)
+  })
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    logs.append(`[${tag}] did-fail-load ${errorCode} ${errorDescription} ${validatedURL}`)
+  })
+  window.webContents.on('render-process-gone', (_event, details) => {
+    logs.append(`[${tag}] render-process-gone: ${JSON.stringify(details)}`)
+  })
+}
 
 function dshRoot() {
   return app.isPackaged
@@ -58,6 +72,7 @@ function createWindow() {
     }
   })
   window.on('closed', () => { mainWindow = null })
+  attachRendererDiagnostics(window, 'main')
   return window
 }
 
@@ -82,6 +97,7 @@ function createPanel() {
   })
   panelWindow.loadFile(path.join(HERE, '..', 'ui', 'panel.html'))
   panelWindow.on('closed', () => { panelWindow = null })
+  attachRendererDiagnostics(panelWindow, 'panel')
   return panelWindow
 }
 
@@ -135,6 +151,11 @@ if (app.requestSingleInstanceLock() === false) {
         if (panelWindow !== null && !panelWindow.isDestroyed()) {
           panelWindow.webContents.send('app:status', status)
         }
+        // Lifecycle transitions double as sound cues; the previous phase lives
+        // in a closure variable so `ready` fires exactly once per recovery.
+        if (status.phase === 'ready' && lastPhase !== 'ready') sounds.play('ready')
+        if (status.phase === 'restarting') sounds.play('warning')
+        lastPhase = status.phase
         if (tray !== undefined) tray.refresh()
       },
     })

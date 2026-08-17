@@ -2,8 +2,18 @@
 // the shared preload. Plain DOM, no framework.
 const api = window.deepharness
 
+// Hard fail-loud if the preload bridge is missing: a silent `undefined` here
+// previously killed the whole panel with no visible symptom.
+if (api === undefined) {
+  const banner = document.createElement('div')
+  banner.style.cssText = 'background:#3a2020;color:#e05656;padding:14px;font:13px/1.5 monospace'
+  banner.textContent = 'preload bridge (window.deepharness) 不可用——面板无法与主进程通信'
+  document.body.prepend(banner)
+}
+
 const $ = (id) => document.getElementById(id)
 
+if (api !== undefined) {
 // ── tabs ───────────────────────────────────────────────────────────────────
 for (const button of document.querySelectorAll('header button')) {
   button.addEventListener('click', () => {
@@ -180,3 +190,5 @@ $('btn-install-update').addEventListener('click', () => { void api.installUpdate
 
 // ── about ──────────────────────────────────────────────────────────────────
 api.getVersion().then((version) => { $('about-version').textContent = `v${version}` }).catch(() => {})
+
+}
