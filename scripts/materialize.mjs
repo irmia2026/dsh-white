@@ -225,6 +225,12 @@ function checkFile(file, label) {
   fail(`missing ${label}: ${file}`)
 }
 
+/** Pass when at least one candidate exists (mirrors node-gyp-build's own lookup). */
+function checkAny(files, label) {
+  if (files.some(existsSync)) return
+  fail(`missing ${label}: none of ${files.join(', ')}`)
+}
+
 checkFile(path.join(OUT_DIR, 'lib', 'bin.js'), 'dsh bin')
 checkFile(path.join(OUT_DIR, 'config', 'agent-presets'), 'shipped agent presets')
 const frontend = path.join(OUT_NODE_MODULES, '@deepseek-ai', 'dsh-web-frontend', 'dist', 'index.html')
@@ -238,14 +244,19 @@ if (process.platform === 'win32') {
   checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'conpty', 'conpty.dll'), 'node-pty conpty.dll')
   checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'conpty', 'OpenConsole.exe'), 'node-pty OpenConsole.exe')
 } else if (process.platform === 'darwin') {
-  // macOS ships prebuilt addons in the npm tarball; spawn-helper is a
-  // macOS-only build target (node-pty binding.gyp gates it on OS=="mac").
-  const helper = path.join(OUT_NODE_MODULES, 'node-pty', 'prebuilds', `darwin-${process.arch}`, 'spawn-helper')
-  checkFile(helper, 'node-pty spawn-helper (darwin prebuild)')
+  // spawn-helper is a macOS-only build target (binding.gyp gates it on
+  // OS=="mac"); it ships prebuilt or compiles to build/Release.
+  checkAny([
+    path.join(OUT_NODE_MODULES, 'node-pty', 'prebuilds', `darwin-${process.arch}`, 'spawn-helper'),
+    path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'spawn-helper'),
+  ], 'node-pty spawn-helper (darwin)')
 } else {
-  // Linux compiles pty.node from source at install; no spawn-helper exists
-  // on this platform at all (binding.gyp builds it only for mac).
-  checkFile(path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'pty.node'), 'node-pty pty.node (compiled)')
+  // Linux compiles pty.node from source at install (prebuilds/ when a
+  // prebuilt was selected, build/Release/ when node-gyp rebuilt).
+  checkAny([
+    path.join(OUT_NODE_MODULES, 'node-pty', 'prebuilds', `${process.platform}-${process.arch}`, 'pty.node'),
+    path.join(OUT_NODE_MODULES, 'node-pty', 'build', 'Release', 'pty.node'),
+  ], 'node-pty pty.node')
 }
 
 const bin = path.join(OUT_DIR, 'lib', 'bin.js')
