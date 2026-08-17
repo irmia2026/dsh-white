@@ -10,7 +10,7 @@ export function createTray({ getWindow, openPanel, settings, updater, onQuit }) 
   const iconPath = path.join(HERE, '..', 'assets', 'tray.png')
   const icon = nativeImage.createFromPath(iconPath)
   const tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon.resize({ width: 16, height: 16 }))
-  tray.setToolTip('DeepHarness Desktop')
+  tray.setToolTip('Dsh-white')
 
   function rebuildMenu() {
     const settingsSnapshot = settings.get()

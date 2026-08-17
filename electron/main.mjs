@@ -1,4 +1,4 @@
-// DeepHarness Desktop — Electron main process.
+// Dsh-white — Electron main process.
 //
 // Architecture (see HANDOFF.md): Electron shell + sidecar dsh child process
 // (ELECTRON_RUN_AS_NODE), BrowserWindow loading http://127.0.0.1:<port>.
@@ -49,7 +49,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'DeepHarness Desktop',
+    title: 'Dsh-white',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(HERE, 'preload.cjs'),
@@ -84,7 +84,7 @@ function createPanel() {
     height: 560,
     minWidth: 620,
     minHeight: 420,
-    title: 'DeepHarness 状态与日志',
+    title: 'Dsh-white 状态与日志',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(HERE, 'preload.cjs'),
@@ -196,13 +196,13 @@ if (app.requestSingleInstanceLock() === false) {
     try {
       await lifecycle.start()
     } catch (error) {
-      dialog.showErrorBox('DeepHarness Desktop', `无法启动 dsh web：\n\n${String(error)}`)
+      dialog.showErrorBox('Dsh-white', `无法启动 dsh web：\n\n${String(error)}`)
       quitApp()
       return
     }
     await mainWindow.loadURL(`http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
     logs.append(`[main] window loaded http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
-    console.log(`[deepharness-desktop] dsh web ready at http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
+    console.log(`[dsh-white] dsh web ready at http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
     updater.schedule()
     // `--open-panel` (dev/diagnostics): open the status panel at startup.
     if (process.argv.includes('--open-panel')) createPanel()

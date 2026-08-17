@@ -1,6 +1,6 @@
 {
-  "name": "deepharness-desktop",
-  "productName": "DeepHarness Desktop",
+  "name": "dsh-white",
+  "productName": "Dsh-white",
   "version": "0.1.0",
   "private": true,
   "description": "Unofficial desktop distribution of DeepSeek Harness: an Electron shell wrapping `dsh web`.",

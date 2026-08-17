@@ -1,5 +1,5 @@
-appId: com.deepharness.desktop
-productName: DeepHarness Desktop
+appId: com.dshwhite.desktop
+productName: Dsh-white
 copyright: Unofficial community build of DeepSeek Harness
 
 directories:
@@ -24,7 +24,7 @@ afterPack: scripts/after-pack.cjs
 publish:
   - provider: github
     owner: irmia2026
-    repo: deepharness-desktop
+    repo: dsh-white
 
 win:
   target:
@@ -35,10 +35,10 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-  artifactName: DeepHarnessDesktop-${version}-Setup.${ext}
+  artifactName: DshWhite-${version}-Setup.${ext}
 
 portable:
-  artifactName: DeepHarnessDesktop-${version}-Portable.${ext}
+  artifactName: DshWhite-${version}-Portable.${ext}
 
 mac:
   target:
