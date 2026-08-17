@@ -1,17 +1,17 @@
-# DeepHarness Desktop 打包交接文件
+# Dsh-white 打包交接文件
 
-日期：2026-08-14 ｜ 状态：**物化 + 打包 + 四大功能全部完成并验证**，剩余发布侧工作见文末
+日期：2026-08-14 ｜ 状态：**更名 Dsh-white 完成；瘦身 289→123MiB；UX 批次（固定端口/时间戳/窗口记忆/右键/下载框/启动画面/手动重启）已验证；剩余发布侧工作见文末**
 
 ## 目标
 
-官方只发布 `dsh web`（浏览器形态）。本项目把它封装成非官方桌面应用 **DeepHarness Desktop**（appId `com.deepharness.desktop`），三平台分发（Windows 先行，macOS/Linux 走 CI），**dsh 现有源码零改动**（便于跟随上游）。
+官方只发布 `dsh web`（浏览器形态）。本项目把它封装成非官方桌面应用 **Dsh-white**（appId `com.deepharness.desktop`），三平台分发（Windows 先行，macOS/Linux 走 CI），**dsh 现有源码零改动**（便于跟随上游）。
 
 ## 架构（已定，勿轻易推翻）
 
 Electron 壳 + sidecar 子进程：
 
 ```
-DeepHarness Desktop.exe (Electron 43, main.mjs)
+Dsh-white.exe (Electron 43, main.mjs)
 ├── app.asar          仅 electron/ + ui/ + assets/（壳代码，~KB 级）
 └── resources/dsh/    自包含 dsh 运行时（afterPack 钩子从 .staging/dsh 拷贝）
     ├── lib/bin.js、config/agent-presets/、package.json（含完整 dependencies）
@@ -74,8 +74,8 @@ npm run build:win               # NSIS + portable
 
 ## 调试备忘
 
-- sidecar 日志：`%APPDATA%\DeepHarness Desktop\dsh-web.log`（stdout+stderr 合并，自动轮转）
-- 应用设置：`%APPDATA%\DeepHarness Desktop\settings.json`
+- sidecar 日志：`%APPDATA%\Dsh-white\dsh-web.log`（stdout+stderr 合并，自动轮转）
+- 应用设置：`%APPDATA%\Dsh-white\settings.json`
 - 面板：托盘 → 日志与状态（状态 / 日志 / 设置 三页签）
 - 本机对照：仓库根 `pnpm dsh web` 冷启动 ~8.3 s（tsx 源码方式）、RSS ~140–210 MB
 

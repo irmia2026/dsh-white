@@ -1,6 +1,6 @@
-# DeepHarness Desktop
+# Dsh-white
 
-非官方 DeepSeek Harness 桌面发行版：Electron 壳 + sidecar dsh 运行时，把浏览器形态的 `dsh web` 封装为三平台桌面应用（Windows 先行）。
+非官方 DeepSeek Harness 桌面发行版（Dsh-white）：Electron 壳 + sidecar dsh 运行时，把浏览器形态的 `dsh web` 封装为三平台桌面应用（Windows 先行）。
 
 ## 功能
 
@@ -9,7 +9,9 @@
 - **崩溃自愈**：sidecar 异常退出自动按指数退避重启（1s→30s），状态面板实时展示（阶段/端口/PID/重启次数/运行时长/最近错误）
 - **日志面板**：内存环形缓冲 + 轮转文件（8MB×3），面板内实时流式日志
 - **自动更新**：启动 30s 后自动检查、每 4 小时复查，**发现新版本由用户手动确认下载与安装**（仅安装版；portable 请下载新包）
-- **数据互通**：会话/凭证与 CLI 共享 `~/.dsh`；API key 在 Web UI 设置页填写
+- **启动画面**：sidecar 就绪前显示初始化页（覆盖首次 ~21s 的 profile 初始化）
+- **体验细节**：日志带 ISO 时间戳、窗口尺寸/位置记忆、右键菜单、下载保存对话框、托盘隐藏不节流、渲染层 V8 编译缓存
+- **数据互通**：：会话/凭证与 CLI 共享 `~/.dsh`；API key 在 Web UI 设置页填写
 
 ## 快速开始
 
@@ -64,8 +66,8 @@ DeepHarness Desktop.exe (Electron 43, Node 24.18.1)
 
 ## 发布
 
-1. `npm run build:win` 产出 `release/DeepHarnessDesktop-<ver>-Setup.exe` + `latest.yml` + `Portable.exe`
-2. 推送到 `irmia2026/deepharness-desktop` 的 GitHub Release（tag `desktop-v<ver>`），自动更新即生效
+1. `npm run build:win` 产出 `release/DshWhite-<ver>-Setup.exe` + `latest.yml` + `Portable.exe`
+2. 推送到 `irmia2026/dsh-white` 的 GitHub Release（tag `desktop-v<ver>`），自动更新即生效
 3. 三平台 CI 矩阵：`.github/workflows/desktop-release.yml`（tag 触发）
 
 ## 许可
