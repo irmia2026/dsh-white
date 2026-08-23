@@ -64,7 +64,7 @@ function waitForReady(port, deadline) {
   })
 }
 
-export function createDshLifecycle({ dshRoot, env, onLog, onStatus, preferredPort = 3080 }) {
+export function createDshLifecycle({ dshRoot, env, onLog, onStatus, preferredPort = 3080, compileCacheDir = null }) {
   let child = null
   let stopping = false
   let restartTimer = null
@@ -129,7 +129,14 @@ export function createDshLifecycle({ dshRoot, env, onLog, onStatus, preferredPor
       ['--expose-internals', bin, 'web', '--port', String(port)],
       {
         cwd: homedir(),
-        env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+        // NODE_COMPILE_CACHE (Node 22.1+): persist V8 compile cache across
+        // launches — the closure is hundreds of packages, so compilation
+        // dominates cold start. Node creates the directory itself.
+        env: {
+          ...env,
+          ELECTRON_RUN_AS_NODE: '1',
+          ...(compileCacheDir !== null ? { NODE_COMPILE_CACHE: compileCacheDir } : {}),
+        },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     )

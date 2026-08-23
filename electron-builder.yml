@@ -14,6 +14,12 @@ files:
 
 asar: true
 
+# Ship only the locales this UI can actually display (saves ~44 MB installed).
+electronLanguages:
+  - en-US
+  - zh-CN
+  - zh-TW
+
 # The dsh runtime closure is copied by the afterPack hook (scripts/after-pack.cjs):
 # extraResources applies the default node_modules exclusions and would silently
 # drop the closure's dependency tree.

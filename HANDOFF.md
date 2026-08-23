@@ -32,6 +32,9 @@ Dsh-white.exe (Electron 43, main.mjs)
 | 崩溃自愈 + 状态展示 | `electron/lifecycle.mjs`：指数退避重启（1s→30s）+ 状态对象；面板实时展示 | sidecar 异常退出后自动重启（实测重启循环正常） |
 | 日志面板 | `electron/log-store.mjs`（环形 2000 行 + 8MB×3 轮转）+ `ui/panel.html` 两页签面板（状态/日志/设置） | 面板可拉取/流式日志 |
 | 自动更新 | `electron/updater.mjs`：启动 30s + 每 4h 自动检查、手动安装；仅 NSIS 安装版；代理形态的网络错误（ERR_CONNECTION_CLOSED 等）自动切直连重试一次（`useDirectConnection` → `setProxy({mode:'direct'})`） | latest.yml/blockmap 已随构建产出；发布后即可生效。已实测：本机系统代理（Clash 7897）会掐断 github.com 的 TLS，直连正常 → 兜底有效场景确认 |
+| 冷启动加速（P0） | sidecar spawn 带 `NODE_COMPILE_CACHE=<userData>/dsh-compile-cache`（Node 24 编译缓存跨启动复用）；渲染层 `v8CacheOptions: 'code'` 已有 | 14s 冷启动基线，收益待实测 |
+| 安全护栏（P0） | 双窗口 `sandbox: true`（preload 只用 contextBridge+ipcRenderer）；主窗 `will-navigate` 限 127.0.0.1/localhost、外链转系统浏览器；面板禁一切导航；权限请求默认全拒、仅放行 notifications | — |
+| 体积（P0） | `electron-builder.yml` `electronLanguages: [en-US, zh-CN, zh-TW]` | 安装后 −44MB（55→3 语言包） |
 
 ~~提示音系统~~（2026-08-17 移除）：隐藏 WebAudio 窗口的播放链路在 sandboxed/无手势环境下可靠性不达标，用户决定移除。若未来需要，优先用 Electron `Notification`（系统通知音）而非隐藏窗口方案。
 

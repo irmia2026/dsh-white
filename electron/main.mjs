@@ -99,6 +99,9 @@ function createWindow() {
       preload: path.join(HERE, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      // preload only touches contextBridge + ipcRenderer, which sandboxed
+      // preloads are allowed to use.
+      sandbox: true,
       // Close-to-tray keeps the page alive: don't throttle its timers/SSE.
       backgroundThrottling: false,
       // Persistent V8 code cache for the renderer (faster UI cold loads).
@@ -109,6 +112,13 @@ function createWindow() {
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http://') || url.startsWith('https://')) void shell.openExternal(url)
     return { action: 'deny' }
+  })
+  // Navigation fence: the app window may only ever show the local dsh server.
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('http://127.0.0.1:') && !url.startsWith('http://localhost:')) {
+      event.preventDefault()
+      if (url.startsWith('http://') || url.startsWith('https://')) void shell.openExternal(url)
+    }
   })
   window.on('close', (event) => {
     if (!quitting && settings.get().closeToTray) {
@@ -143,9 +153,12 @@ function createPanel() {
       preload: path.join(HERE, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   })
   panelWindow.loadFile(path.join(HERE, '..', 'ui', 'panel.html'))
+  // The panel is a static local page: no in-page navigation, ever.
+  panelWindow.webContents.on('will-navigate', (event) => event.preventDefault())
   panelWindow.on('closed', () => { panelWindow = null })
   attachRendererDiagnostics(panelWindow, 'panel')
   return panelWindow
@@ -182,6 +195,12 @@ if (app.requestSingleInstanceLock() === false) {
   app.whenReady().then(async () => {
     app.setLoginItemSettings({ openAtLogin: settings.get().autoLaunch })
 
+    // Permission fence: deny every renderer permission request except
+    // notifications, which the dsh web UI may legitimately surface.
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(permission === 'notifications')
+    })
+
     updater = createUpdater({
       settings,
       onLog: (line) => logs.append(line),
@@ -195,6 +214,7 @@ if (app.requestSingleInstanceLock() === false) {
     lifecycle = createDshLifecycle({
       dshRoot: dshRoot(),
       env: process.env,
+      compileCacheDir: path.join(userDataDir, 'dsh-compile-cache'),
       onLog: (line) => logs.append(line),
       onStatus: (status) => {
         if (panelWindow !== null && !panelWindow.isDestroyed()) {
