@@ -81,10 +81,10 @@ npm run build:win               # NSIS + portable
 
 ## 剩余工作（发布侧）
 
-- [ ] `.github/workflows/desktop-release.yml` 三平台矩阵（tag `desktop-v*` 触发：materialize → 打包 → GitHub Release）
+- [ ] `.github/workflows/desktop-release.yml` 三平台矩阵（tag `desktop-v*` 触发：materialize → 打包 → GitHub Release）；现支持 `workflow_call`（version/upstream_ref/desktop_ref 入参），被 upstream-watch 自动调起；首次 green run 即验收
 - [ ] 正式图标（当前为 make-icon 占位）；Windows 代码签名（SmartScreen）；macOS 公证
 - [ ] 推送仓库到 `irmia2026/deepharness-desktop`（publish.owner/repo 已占位）
-- [ ] 上游 dsh 版本漂移策略：app 版本跟随 dsh 版本（当前 0.1.0）；manifest 已记录 dshVersion
+- [x] 上游 dsh 版本漂移策略（2026-08-23 落地）：`.github/workflows/upstream-watch.yml` 每 6h（cron `23 */6 * * *`）+ 手动触发，轮询 `deepseek-ai/deepseek-harness` 最新 release tag 与 `.upstream-tag` 对比；有新版本即 bump desktop patch 版本、提交 main，并 `workflow_call` 调起 desktop-release 按该上游 tag 精确构建发版。**版本号独立递增、不镜像上游 rc 号**——`0.1.0-rc.N` 在 semver 里低于已安装的 `0.1.0`，镜像会导致 electron-updater 永远认为无更新。构建源为官方上游仓库（用户决定，不带 fork 特性分支）
 
 ## 文件清单
 

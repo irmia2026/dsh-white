@@ -1,0 +1,82 @@
+# Upstream watch: poll deepseek-ai/deepseek-harness releases and ship a new
+# dsh-white desktop release whenever upstream publishes one.
+#
+# State is a single tracked file, `.upstream-tag`, holding the last upstream
+# tag we shipped. When upstream's newest release tag differs, this workflow:
+#   1. bumps the desktop patch version in package.json (monotonic, so
+#      electron-updater always recognizes the new build as newer),
+#   2. records the upstream tag in .upstream-tag,
+#   3. commits and pushes to main,
+#   4. calls desktop-release.yml (workflow_call) to build from that exact
+#      upstream tag and publish the GitHub Release the updater polls.
+#
+# The desktop version is deliberately independent of upstream's rc naming:
+# upstream's 0.1.0-rc.N prereleases would compare LOWER than an installed
+# 0.1.0 in semver, so mirroring them would make updates invisible.
+
+name: Upstream watch
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+      upstream_tag: ${{ steps.sync.outputs.upstream_tag }}
+      desktop_version: ${{ steps.sync.outputs.desktop_version }}
+      desktop_sha: ${{ steps.sync.outputs.desktop_sha }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compare upstream latest with last shipped
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          UPSTREAM=$(gh release list --repo deepseek-ai/deepseek-harness --limit 1 --json tagName --jq '.[0].tagName')
+          LAST=$(cat .upstream-tag 2>/dev/null || true)
+          echo "upstream latest: ${UPSTREAM:-<none>} / last shipped: ${LAST:-<none>}"
+          if [ -z "$UPSTREAM" ] || [ "$UPSTREAM" = "$LAST" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CURRENT=$(node -p "require('./package.json').version")
+          NEXT=$(node -e "const p='$CURRENT'.split('.'); p[2]=String(Number(p[2])+1); console.log(p.join('.'))")
+          node -e "
+            const fs = require('fs')
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+            pkg.version = process.argv[1]
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n')
+          " "$NEXT"
+          echo "$UPSTREAM" > .upstream-tag
+
+          git config user.name "dsh-white-bot"
+          git config user.email "irmia2026@users.noreply.github.com"
+          git add package.json .upstream-tag
+          git commit -m "chore(release): follow upstream $UPSTREAM as desktop v$NEXT"
+          git push origin HEAD:main
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "upstream_tag=$UPSTREAM" >> "$GITHUB_OUTPUT"
+          echo "desktop_version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "desktop_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/desktop-release.yml
+    with:
+      version: ${{ needs.check.outputs.desktop_version }}
+      upstream_ref: ${{ needs.check.outputs.upstream_tag }}
+      desktop_ref: ${{ needs.check.outputs.desktop_sha }}

@@ -1,5 +1,7 @@
 # Desktop release pipeline: tag `desktop-v*` (or manual dispatch) builds the
 # three platform installers and publishes them to a GitHub Release.
+# `upstream-watch.yml` also calls this workflow (workflow_call) whenever the
+# upstream deepseek-harness repo publishes a new release.
 #
 # The desktop project lives as an untracked directory inside the
 # deepseek-harness checkout, so this workflow checks out both repos: the
@@ -15,6 +17,20 @@ on:
   push:
     tags: ['desktop-v*']
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Desktop version to publish (e.g. 0.1.1). Defaults to the triggering tag name.'
+        required: false
+        type: string
+      upstream_ref:
+        description: 'Harness git ref to build from (e.g. dsh-v0.1.1-rc.2). Defaults to the harness default branch.'
+        required: false
+        type: string
+      desktop_ref:
+        description: 'Desktop repo ref/sha to build and to target the release at. Defaults to the triggering ref.'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -42,10 +58,12 @@ jobs:
         with:
           repository: deepseek-ai/deepseek-harness
           path: harness
+          ref: ${{ inputs.upstream_ref || '' }}
 
       - uses: actions/checkout@v6
         with:
           path: harness/desktop
+          ref: ${{ inputs.desktop_ref || '' }}
 
       # pnpm/action-setup resolves its version from the checked-out repo's
       # package.json — which is the desktop repo here (no packageManager
@@ -117,6 +135,8 @@ jobs:
     steps:
       # gh release create needs a git repository context.
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.desktop_ref || '' }}
 
       - uses: actions/download-artifact@v5
         with:
@@ -125,8 +145,20 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version || '' }}
+          UPSTREAM_REF: ${{ inputs.upstream_ref || '' }}
+          DESKTOP_REF: ${{ inputs.desktop_ref || '' }}
         run: |
-          VERSION="${GITHUB_REF_NAME#desktop-v}"
-          gh release create "desktop-v${VERSION}" dist/desktop-*/* \
-            --title "Dsh-white v${VERSION}" \
-            --generate-notes
+          set -euo pipefail
+          VERSION="${INPUT_VERSION:-${GITHUB_REF_NAME#desktop-v}}"
+          TAG="desktop-v${VERSION}"
+          ARGS=(--title "Dsh-white v${VERSION}")
+          if [ -n "$UPSTREAM_REF" ]; then
+            ARGS+=(--notes "Bundles [deepseek-harness ${UPSTREAM_REF}](https://github.com/deepseek-ai/deepseek-harness/releases/tag/${UPSTREAM_REF}).")
+          else
+            ARGS+=(--generate-notes)
+          fi
+          if [ -n "$DESKTOP_REF" ]; then
+            ARGS+=(--target "$DESKTOP_REF")
+          fi
+          gh release create "$TAG" dist/desktop-*/* "${ARGS[@]}"
