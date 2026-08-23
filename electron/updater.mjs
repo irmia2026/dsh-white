@@ -17,10 +17,33 @@ const { autoUpdater } = electronUpdater
 const CHECK_DELAY_MS = 30_000
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
 
-export function createUpdater({ settings, onLog, onState }) {
+export function createUpdater({ settings, onLog, onState, useDirectConnection }) {
   let state = { phase: 'idle', version: null, error: null, progress: null, current: app.getVersion() }
   let timer = null
   const listeners = new Set()
+
+  // A local system proxy (e.g. Clash/Mihomo on 127.0.0.1 with a broken rule
+  // for github.com) kills TLS to GitHub: the check dies with
+  // net::ERR_CONNECTION_CLOSED while direct connectivity is fine. Electron's
+  // net stack follows the system proxy by default, so on a proxy-shaped
+  // network failure switch the default session to direct and retry ONCE.
+  // The default session otherwise only talks to localhost, so this is safe.
+  let triedDirect = false
+  const PROXY_SHAPED = /ERR_(CONNECTION_CLOSED|CONNECTION_RESET|CONNECTION_REFUSED|PROXY_CONNECTION_FAILED|TUNNEL_CONNECTION_FAILED|TIMED_OUT)|SSL connection/i
+
+  async function withDirectFallback(operation) {
+    try {
+      return await operation()
+    } catch (error) {
+      if (triedDirect || typeof useDirectConnection !== 'function' || !PROXY_SHAPED.test(String(error))) {
+        throw error
+      }
+      triedDirect = true
+      onLog('[updater] proxy-shaped network failure — retrying over a direct connection')
+      await useDirectConnection()
+      return operation()
+    }
+  }
 
   const emit = (patch) => {
     state = { ...state, ...patch, current: app.getVersion() }
@@ -81,7 +104,7 @@ export function createUpdater({ settings, onLog, onState }) {
       return
     }
     try {
-      await autoUpdater.checkForUpdates()
+      await withDirectFallback(() => autoUpdater.checkForUpdates())
     } catch (error) {
       emit({ phase: 'error', error: String(error) })
       onLog(`[updater] check failed: ${String(error)}`)
@@ -91,7 +114,7 @@ export function createUpdater({ settings, onLog, onState }) {
   async function downloadAndInstall() {
     if (!canUpdate()) return
     try {
-      await autoUpdater.downloadUpdate()
+      await withDirectFallback(() => autoUpdater.downloadUpdate())
     } catch (error) {
       emit({ phase: 'error', error: String(error) })
       onLog(`[updater] download failed: ${String(error)}`)

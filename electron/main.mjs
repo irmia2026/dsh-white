@@ -185,6 +185,7 @@ if (app.requestSingleInstanceLock() === false) {
     updater = createUpdater({
       settings,
       onLog: (line) => logs.append(line),
+      useDirectConnection: () => session.defaultSession.setProxy({ mode: 'direct' }),
       onState: (state) => {
         if (panelWindow !== null && !panelWindow.isDestroyed()) {
           panelWindow.webContents.send('app:update', state)
