@@ -2,11 +2,16 @@
 // shell does (ELECTRON_RUN_AS_NODE + --expose-internals, dynamic port, temp
 // DSH_HOME), wait for the readiness line, probe the page, then stop.
 // Exits 0 only when the server stays alive and serves the boot manifest.
+//
+// Since dsh-v0.1.2-alpha.1 the readiness URL carries a `?token=` launch
+// token: the first GET on it mints a signed auth cookie and 303s to clean
+// `/`, and only cookie-bearing requests are served the page (bare requests
+// get 401). The probe performs that exchange like a browser would; older
+// servers answer the first GET directly, which this flow also covers.
 import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { request } from 'node:http'
 import { fileURLToPath } from 'node:url'
 
 const DESKTOP_DIR = fileURLToPath(new URL('..', import.meta.url))
@@ -24,20 +29,27 @@ function fail(message) {
   process.exit(1)
 }
 
-function probe(url, timeoutMs = 5000) {
-  return new Promise((resolve) => {
-    const req = request(url, { timeout: timeoutMs }, (res) => {
-      const chunks = []
-      res.on('data', (chunk) => chunks.push(chunk))
-      res.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8')
-        resolve({ status: res.statusCode, hasBoot: body.includes('__DSH_BOOT__') })
+async function probe(pageUrl, timeoutMs = 5000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    let res = await fetch(pageUrl, { redirect: 'manual', signal: controller.signal })
+    // Launch-token exchange: mint the auth cookie, then re-request `/`.
+    if (res.status === 303 || res.status === 302) {
+      const setCookie = res.headers.get('set-cookie')
+      if (setCookie === null) return { status: res.status, hasBoot: false }
+      res = await fetch(new URL('/', pageUrl), {
+        headers: { cookie: setCookie.split(';')[0] },
+        signal: controller.signal,
       })
-    })
-    req.on('error', () => resolve(null))
-    req.on('timeout', () => { req.destroy(); resolve(null) })
-    req.end()
-  })
+    }
+    const body = await res.text()
+    return { status: res.status, hasBoot: body.includes('__DSH_BOOT__') }
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 const home = mkdtempSync(join(tmpdir(), 'dsh-smoke-boot-'))
@@ -64,7 +76,7 @@ while (Date.now() < deadline) {
     console.error(stderr.slice(-4000))
     fail(`dsh exited early (code=${String(child.exitCode)}); see stderr above`)
   }
-  const match = stdout.match(/dsh web: (http:\/\/127\.0\.0\.1:\d+)/)
+  const match = stdout.match(/dsh web: (http:\/\/127\.0\.0\.1:\d+\S*)/)
   if (match !== null) {
     url = match[1]
     break
