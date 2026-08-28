@@ -75,6 +75,9 @@ export function createDshLifecycle({ dshRoot, env, onLog, onStatus, preferredPor
     phase: 'idle', // idle | starting | ready | restarting | failed
     port: null,
     pid: null,
+    // Full readiness URL including the launch token (`?token=…`, since dsh
+    // v0.1.2-alpha.1); null on older dsh builds that serve bare URLs.
+    authUrl: null,
     restarts: 0,
     lastError: null,
     startedAt: null,
@@ -91,14 +94,17 @@ export function createDshLifecycle({ dshRoot, env, onLog, onStatus, preferredPor
     return Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** attempts)
   }
 
-  function consumeStream(buffer, chunk, tag) {
+  function consumeStream(buffer, chunk, tag, onLine) {
     // Extract only complete lines; keep the trailing partial for the next chunk.
     const full = (buffer ?? '') + chunk.toString('utf8')
     const lines = full.split('\n')
     const remainder = lines.pop() ?? ''
     for (const line of lines) {
       const trimmed = line.trimEnd()
-      if (trimmed !== '') onLog(`[${tag}] ${trimmed}`)
+      if (trimmed !== '') {
+        onLog(`[${tag}] ${trimmed}`)
+        onLine?.(trimmed)
+      }
     }
     return remainder.slice(-8192)
   }
@@ -113,6 +119,7 @@ export function createDshLifecycle({ dshRoot, env, onLog, onStatus, preferredPor
       phase: 'starting',
       port,
       pid: null,
+      authUrl: null,
       lastError: null,
       startedAt: new Date().toISOString(),
     })
@@ -144,7 +151,13 @@ export function createDshLifecycle({ dshRoot, env, onLog, onStatus, preferredPor
     emitStatus({ pid: childProcess.pid })
 
     childProcess.stdout.on('data', (chunk) => {
-      stdoutTail = consumeStream(stdoutTail, chunk, 'dsh')
+      stdoutTail = consumeStream(stdoutTail, chunk, 'dsh', (line) => {
+        // dsh v0.1.2-alpha.1+: the readiness line carries the launch token
+        // (`dsh web: http://127.0.0.1:<port>/?token=…`); capture it so the
+        // shell loads the authenticated URL instead of the 401-gated bare one.
+        const match = line.match(/dsh web: (http:\/\/127\.0\.0\.1:\d+\S*)/)
+        if (match !== null && status.authUrl !== match[1]) emitStatus({ authUrl: match[1] })
+      })
     })
     childProcess.stderr.on('data', (chunk) => {
       stderrTail = consumeStream(stderrTail, chunk, 'dsh:err')

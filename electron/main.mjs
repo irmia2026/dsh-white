@@ -23,6 +23,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 let mainWindow = null
 let panelWindow = null
+// The URL the main window currently shows; guards against double loads when
+// the lifecycle 'ready' status and the startup path race each other.
+let loadedUrl = null
 let quitting = false
 
 /** Route renderer console errors and load failures into the app log. */
@@ -221,6 +224,18 @@ if (app.requestSingleInstanceLock() === false) {
           panelWindow.webContents.send('app:status', status)
         }
         if (tray !== undefined) tray.refresh()
+        // dsh v0.1.2-alpha.1+ gates the page behind a launch token: bare
+        // loads get 401. Load the authenticated readiness URL, and reload
+        // with the fresh token after every sidecar restart (each spawn
+        // mints a new one).
+        if (status.phase === 'ready' && mainWindow !== null && !mainWindow.isDestroyed()) {
+          const target = status.authUrl
+            ?? (status.port !== null ? `http://127.0.0.1:${String(status.port)}` : null)
+          if (target !== null && target !== loadedUrl) {
+            loadedUrl = target
+            void mainWindow.loadURL(target)
+          }
+        }
       },
     })
 
@@ -288,9 +303,14 @@ if (app.requestSingleInstanceLock() === false) {
       quitApp()
       return
     }
-    await mainWindow.loadURL(`http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
-    logs.append(`[main] window loaded http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
-    console.log(`[dsh-white] dsh web ready at http://127.0.0.1:${String(lifecycle.getStatus().port)}`)
+    const readyStatus = lifecycle.getStatus()
+    const target = readyStatus.authUrl ?? `http://127.0.0.1:${String(readyStatus.port)}`
+    if (target !== loadedUrl) {
+      loadedUrl = target
+      await mainWindow.loadURL(target)
+    }
+    logs.append(`[main] window loaded http://127.0.0.1:${String(readyStatus.port)}`)
+    console.log(`[dsh-white] dsh web ready at http://127.0.0.1:${String(readyStatus.port)}`)
     updater.schedule()
     // `--open-panel` (dev/diagnostics): open the status panel at startup.
     if (process.argv.includes('--open-panel')) createPanel()
