@@ -220,6 +220,10 @@ while (queue.length > 0) {
 console.log(`materialize: staged ${stagedVersions.size} packages; verifying`)
 assertLinkFree(OUT_DIR)
 
+// Downstream hotfixes ride every staging (see the script header for why).
+const { patchStagedDsh } = await import('./patch-staged-dsh.mjs')
+patchStagedDsh(OUT_DIR)
+
 function checkFile(file, label) {
   if (existsSync(file)) return
   fail(`missing ${label}: ${file}`)
