@@ -20,12 +20,14 @@ const WORKER_REL = path.join(
 )
 // Present both in this patch and in the upstream fix: skip when either landed.
 const ALREADY_FIXED_MARKER = 'lstrlenW'
-const STOCK = `function readUtf16(koffi, address) {
-	const bytes = Buffer.from(koffi.view(address, 32768));
-	let end = 0;
-	while (end + 1 < bytes.length && bytes[end] !== 0) end += 2;
-	return bytes.toString("utf16le", 0, end);
-}`
+// The bug signature, stable across upstream tweaks to the surrounding loop
+// (rc.2 used a single-byte NUL check, 0.1.2-alpha.1 checks both UTF-16
+// bytes): any worker still decoding via koffi.view carries the crash.
+const BUGGY_MARKER = 'koffi.view(address'
+// The whole stock function, whatever its loop condition: from the opening
+// line through the first closing brace at column 0 (the body never dedents
+// that far).
+const STOCK_FUNCTION = /function readUtf16\(koffi, address\) \{[\s\S]*?\n\}/
 const PATCHED = `function readUtf16(koffi, address) {
 	// Hotfix (dsh-white): koffi.view wraps native memory in an EXTERNAL
 	// ArrayBuffer, which Electron's V8 sandbox rejects with a fatal napi
@@ -64,11 +66,11 @@ export function patchStagedDsh(outDir) {
     console.log('patch-staged-dsh: picker worker already fixed; nothing to do')
     return
   }
-  if (!text.includes(STOCK)) {
+  if (!text.includes(BUGGY_MARKER) || !STOCK_FUNCTION.test(text)) {
     console.error('patch-staged-dsh: staged worker.cjs matches neither the stock nor the fixed readUtf16; upstream changed — re-derive this hotfix before shipping')
     process.exit(1)
   }
-  writeFileSync(worker, text.replace(STOCK, PATCHED))
+  writeFileSync(worker, text.replace(STOCK_FUNCTION, PATCHED))
   console.log('patch-staged-dsh: applied V8-sandbox picker hotfix to staged worker.cjs')
 }
 

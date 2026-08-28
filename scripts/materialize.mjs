@@ -156,6 +156,18 @@ for (const file of readdirSync(path.join(CLI_DIR, 'lib'))) {
   if (file.endsWith('.js')) cpSync(path.join(CLI_DIR, 'lib', file), path.join(OUT_DIR, 'lib', file))
 }
 copyPackage(path.join(CLI_DIR, 'config'), path.join(OUT_DIR, 'config'))
+// Upstream dsh-v0.1.2-alpha.1 turned shipped config trees (e.g.
+// config/agent-presets, now living in packages/preset/agent-presets) into
+// build-time mounts declared as `dsh.configTrees` in the CLI manifest:
+// the source tree at `path` is mounted at `mount` of the packaged CLI.
+// Replicate the mounts here so the staged runtime matches upstream's own
+// packing. Older upstreams ship the trees inline under config/ and declare
+// no mounts, in which case this loop is a no-op.
+for (const tree of cliManifest.dsh?.configTrees ?? []) {
+  const source = path.resolve(CLI_DIR, tree.path)
+  if (!existsSync(source)) fail(`configTrees mount source missing: ${tree.path} (from ${CLI_DIR})`)
+  copyPackage(source, path.join(OUT_DIR, tree.mount))
+}
 // Redistribution compliance: the harness license and third-party notices
 // ride the closure root, next to the staged runtime.
 for (const notice of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) {
