@@ -8,9 +8,10 @@
 //   directory picker failed: win32 folder dialog worker exited before
 //   reporting a result
 // The fix reads the string with plain FFI calls (lstrlenW + RtlMoveMemory)
-// into a JS-heap Buffer instead. Remove this script once the staged dsh
-// release ships the equivalent fix upstream (the already-fixed marker below
-// then makes this a no-op).
+// into a JS-heap Buffer instead. Upstream shipped the equivalent fix in dsh
+// v0.1.3-alpha.2 (koffi.decode of a JS-heap pointer copy), so against any
+// newer staging tree this script is a no-op; it only still patches builds
+// materialized from older checkouts.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,7 +20,14 @@ const WORKER_REL = path.join(
   'node_modules', '@deepseek-ai', 'dsh-host-directory-picker-native', 'lib', 'worker.cjs',
 )
 // Present both in this patch and in the upstream fix: skip when either landed.
+// Upstream fixed this properly in dsh v0.1.3-alpha.2: readUtf16 now copies the
+// pointer into a JS Buffer and calls koffi.decode(..., "str16") instead of
+// wrapping COM memory in an external ArrayBuffer via koffi.view.
+// NB: match koffi.decode INSIDE the readUtf16 body only — older workers carry
+// a comment mentioning `koffi.decode(addr, 'str16')`, so a whole-file match
+// is a false positive.
 const ALREADY_FIXED_MARKER = 'lstrlenW'
+const READ_UTF16_FN = /function readUtf16\([\s\S]*?\n\}/
 // The bug signature, stable across upstream tweaks to the surrounding loop
 // (rc.2 used a single-byte NUL check, 0.1.2-alpha.1 checks both UTF-16
 // bytes): any worker still decoding via koffi.view carries the crash.
@@ -63,7 +71,12 @@ export function patchStagedDsh(outDir) {
   }
   const text = readFileSync(worker, 'utf8')
   if (text.includes(ALREADY_FIXED_MARKER)) {
-    console.log('patch-staged-dsh: picker worker already fixed; nothing to do')
+    console.log('patch-staged-dsh: picker worker already fixed (downstream patch); nothing to do')
+    return
+  }
+  const readUtf16 = text.match(READ_UTF16_FN)
+  if (readUtf16 !== null && readUtf16[0].includes('koffi.decode')) {
+    console.log('patch-staged-dsh: picker worker fixed upstream (koffi.decode str16); hotfix obsolete')
     return
   }
   if (!text.includes(BUGGY_MARKER) || !STOCK_FUNCTION.test(text)) {

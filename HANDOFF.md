@@ -88,6 +88,7 @@ npm run build:win               # NSIS + portable
 - [ ] 正式图标（当前为 make-icon 占位）；Windows 代码签名（SmartScreen）；macOS 公证
 - [ ] 推送仓库到 `irmia2026/deepharness-desktop`（publish.owner/repo 已占位）
 - [x] 上游 dsh 版本漂移策略（2026-08-23 落地）：`.github/workflows/upstream-watch.yml` 每 6h（cron `23 */6 * * *`）+ 手动触发，轮询 `deepseek-ai/deepseek-harness` 最新 release tag 与 `.upstream-tag` 对比；有新版本即 bump desktop patch 版本、提交 main，并 `workflow_call` 调起 desktop-release 按该上游 tag 精确构建发版。**版本号独立递增、不镜像上游 rc 号**——`0.1.0-rc.N` 在 semver 里低于已安装的 `0.1.0`，镜像会导致 electron-updater 永远认为无更新。构建源为官方上游仓库（用户决定，不带 fork 特性分支）
+  - **2026-09-10 事故与修复**：① picker hotfix（patch-staged-dsh）不认识上游 0.1.3-alpha.2 的重写（readUtf16 改用 `koffi.decode(...,"str16")`，V8 沙箱问题已被上游修复）→ 哨兵按设计拒绝构建，v0.1.9~v0.1.14 六个版本号空烧。识别逻辑改为「只看 readUtf16 函数体内是否用 koffi.decode」（旧文件注释里提到过 koffi.decode，全文匹配会误判）。② `.upstream-tag` 原在 watch 的 check 任务里随 bump 一起提交——发布失败也被记成"已发"，永久跳过。现只在 publish 成功后由 desktop-release.yml 写回
 
 ## 文件清单
 

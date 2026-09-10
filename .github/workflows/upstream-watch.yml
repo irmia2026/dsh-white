@@ -57,11 +57,16 @@ jobs:
             pkg.version = process.argv[1]
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n')
           " "$NEXT"
-          echo "$UPSTREAM" > .upstream-tag
 
+          # NB: .upstream-tag is intentionally NOT committed here. It records
+          # what actually SHIPPED and is written by desktop-release.yml's
+          # publish job after a successful release. Recording it now would
+          # skip an upstream tag forever when the release build fails
+          # (observed 2026-09: six versions burned while materialize kept
+          # failing, none retried).
           git config user.name "dsh-white-bot"
           git config user.email "irmia2026@users.noreply.github.com"
-          git add package.json .upstream-tag
+          git add package.json
           git commit -m "chore(release): follow upstream $UPSTREAM as desktop v$NEXT"
           git push origin HEAD:main
 

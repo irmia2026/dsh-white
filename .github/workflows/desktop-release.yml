@@ -162,3 +162,25 @@ jobs:
             ARGS+=(--target "$DESKTOP_REF")
           fi
           gh release create "$TAG" dist/desktop-*/* "${ARGS[@]}"
+
+      # Only after a successful publish: record which upstream tag shipped.
+      # upstream-watch.yml compares against this file, so writing it here (and
+      # never in the watch job itself) guarantees a failed release is retried
+      # instead of skipped forever.
+      - name: Record shipped upstream tag
+        if: ${{ inputs.upstream_ref }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_REF: ${{ inputs.upstream_ref || '' }}
+        run: |
+          set -euo pipefail
+          echo "$UPSTREAM_REF" > .upstream-tag
+          git config user.name "dsh-white-bot"
+          git config user.email "irmia2026@users.noreply.github.com"
+          git add .upstream-tag
+          if git diff --cached --quiet; then
+            echo "upstream tag already recorded"
+            exit 0
+          fi
+          git commit -m "chore(release): shipped upstream $UPSTREAM_REF"
+          git push origin HEAD:main
