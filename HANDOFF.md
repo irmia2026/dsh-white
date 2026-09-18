@@ -43,6 +43,7 @@ Dsh-white.exe (Electron 43, main.mjs)
 | 项 | 结论 |
 |---|---|
 | Electron 43.4.0 捆绑 Node | 24.18.1，满足 dsh engines `^22.19 \|\| >=24` |
+| **Electron 版本必须钉死** | `node-addon-require-builtin` 的原生 shim（0.1.6 起，2026-09-14）带**运行时指纹白名单**：只认 Electron `43.0.0 / 44.0.0 / 45.0.0-alpha.6`。我们的 43.4.0（Node 24.18.1, V8 15.0.245.28-electron.0）被拒 → `Unsupported/no-context`，dsh 启动即失败（2026-09-17 CI 三平台全挂，dsh 0.1.6-alpha.1 起）。已升至 **44.0.0**（精确版本，不用 `^`）。**升级 Electron 前先跑指纹探测**：`ELECTRON_RUN_AS_NODE=1 electron --expose-internals -e "require('node-addon-require-builtin').requireBuiltin('internal/modules/esm/loader')"`，失败就别升。`NARB_BACKEND=nodeabi` 不是出路（win32-x64 无预编译二进制） |
 | `node:sqlite`（Electron Node 下） | 可用 |
 | node-pty / koffi 原生件 | N-API/平台包，Electron 下直接加载，无需 rebuild |
 | 物化闭包 | resolver-walk（见下），427 包 / ~290 MiB / 零符号链接 |
