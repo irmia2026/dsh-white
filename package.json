@@ -1,7 +1,7 @@
 {
   "name": "dsh-white",
   "productName": "Dsh-white",
-  "version": "0.1.30",
+  "version": "0.1.31",
   "private": true,
   "description": "Unofficial desktop distribution of DeepSeek Harness: an Electron shell wrapping `dsh web`.",
   "author": {
